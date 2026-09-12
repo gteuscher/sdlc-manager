@@ -344,6 +344,14 @@ conversations.
 - **FR-046**: System MUST continue to present items belonging to a repository whose SDLC package
   has been upgraded, marking any item whose recorded state no longer exists in the new manifest as
   unmapped rather than dropping or reassigning it.
+- **FR-047**: System MUST distinguish the manifest's contract version from the SDLC package's own
+  version, and MUST refuse a manifest written against a contract version it does not support,
+  naming the version it found, rather than loading a manifest it may misread.
+- **FR-048**: System MUST reject a manifest in which any work-item field is owned by more than one
+  provider, or in which a provider's raw status value maps to more than one state, treating
+  ambiguity as a validation error rather than resolving it at runtime.
+
+The shape of this manifest is specified in [contracts/sdlc-manifest.md](contracts/sdlc-manifest.md).
 
 ### Key Entities
 
