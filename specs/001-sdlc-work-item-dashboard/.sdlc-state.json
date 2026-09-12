@@ -1,0 +1,11 @@
+{
+  "title": "SDLC Work Item Dashboard",
+  "state": "implement",
+  "reviews": {
+    "requirements": "approved"
+  },
+  "gates": {
+    "constitutionCheck": "pass",
+    "analyze": "resolved"
+  }
+}

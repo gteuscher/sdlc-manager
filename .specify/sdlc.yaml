@@ -1,0 +1,240 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Spec Kit, declared as an SDLC package.
+#
+# T127/T128. This is the dogfood: the lifecycle this repository itself runs,
+# written against contracts/sdlc-manifest.md rather than against the dashboard's
+# implementation. The fixture lifecycles were authored to fit the code and so
+# cannot falsify SC-003; this one can.
+#
+# Before this file existed, Spec Kit encoded its stages only in skill prose
+# (`.claude/skills/speckit-*/SKILL.md`), which means the dashboard was required to
+# report it as **unsupported** — FR-041 and FR-045, Principle II's hard line. That
+# is asserted in tests/unit/dogfood.speckit.test.ts before anything here is
+# checked, because a dogfood that skipped the unsupported case would be testing
+# the easy half.
+#
+# Adding this manifest is a change to the SDLC package, not to the dashboard,
+# which is exactly what spec.md §Assumptions predicts for an existing harness.
+# ─────────────────────────────────────────────────────────────────────────────
+
+sdlc: 1
+id: speckit
+name: Spec Kit
+version: 0.1.0
+description: >
+  The spec-driven lifecycle this repository runs on itself: a feature is
+  specified, clarified, planned, broken into tasks, analysed for cross-artifact
+  consistency, and implemented.
+
+# ─── Providers ───────────────────────────────────────────────────────────────
+# Entirely local. Spec Kit has no tracker, so the repository is the system of
+# record and the whole lifecycle works with no network (FR-036).
+providers:
+  - id: repo
+    kind: filesystem
+    root: "."
+    state:
+      # Spec Kit records which stage a feature has reached only implicitly, in
+      # which artifacts exist. Declaring it explicitly is the one thing adopting
+      # this contract required of the package — see §Findings in the test file.
+      path: "specs/{item.key}/.sdlc-state.json"
+      field: "state"
+    title_field: "title"
+
+  - id: gates
+    kind: checks
+    root: "."
+    results:
+      path: "specs/{item.key}/.sdlc-checks.json"
+
+# ─── Ownership ───────────────────────────────────────────────────────────────
+ownership:
+  state: repo
+  title: repo
+  artifacts: repo
+
+# ─── Items ───────────────────────────────────────────────────────────────────
+# One feature directory under specs/ is one work item.
+items:
+  unit: feature
+  discover:
+    - provider: repo
+      glob: "specs/*/spec.md"
+  identity:
+    correlate_on: key
+    patterns:
+      repo: "specs/(?<key>[0-9]+-[a-z0-9-]+)/spec\\.md"
+
+# ─── States (ORDERED) ────────────────────────────────────────────────────────
+states:
+  - id: specify
+    name: Specify
+    description: The feature is described and agreed before any work starts.
+    maps:
+      repo: ["specify"]
+    artifacts:
+      - id: spec
+        name: Specification
+        kind: markdown
+        provider: repo
+        path: "specs/{item.key}/spec.md"
+        required: true
+    gates:
+      - id: spec-written
+        name: Specification written
+        kind: artifact
+        provider: repo
+        path: "specs/{item.key}/spec.md"
+        passes_when: { present: true }
+
+  - id: clarify
+    name: Clarify
+    description: Underspecified areas are resolved and the answers encoded in the spec.
+    # A reviewer decides when the requirements checklist is satisfied, so items
+    # resting here are waiting on a person.
+    awaits_human: true
+    maps:
+      repo: ["clarify"]
+    artifacts:
+      - id: checklist
+        name: Requirements checklist
+        kind: markdown
+        provider: repo
+        path: "specs/{item.key}/checklists/requirements.md"
+        required: true
+    gates:
+      - id: requirements-reviewed
+        name: Requirements checklist reviewed
+        kind: manual
+        awaits_human: true
+        blocking: true
+        # Rule 15: a manual gate must name where its decision is recorded. v1.0
+        # cannot record one itself without breaking read-only (FR-034).
+        evidence:
+          provider: repo
+          path: "specs/{item.key}/.sdlc-state.json"
+          field: "reviews.requirements"
+
+  - id: plan
+    name: Plan
+    description: Research, data model, and contracts, checked against the constitution.
+    maps:
+      repo: ["plan"]
+    artifacts:
+      - id: plan
+        name: Implementation plan
+        kind: markdown
+        provider: repo
+        path: "specs/{item.key}/plan.md"
+        required: true
+      - id: research
+        name: Phase 0 research
+        kind: markdown
+        provider: repo
+        path: "specs/{item.key}/research.md"
+      - id: data-model
+        name: Phase 1 data model
+        kind: markdown
+        provider: repo
+        path: "specs/{item.key}/data-model.md"
+    gates:
+      - id: constitution-check
+        name: Constitution check passes
+        kind: field
+        provider: repo
+        field: "gates.constitutionCheck"
+        passes_when: { equals: "pass" }
+
+  - id: tasks
+    name: Tasks
+    description: A dependency-ordered task list every later step is measured against.
+    maps:
+      repo: ["tasks"]
+    artifacts:
+      - id: tasks
+        name: Task list
+        kind: markdown
+        provider: repo
+        path: "specs/{item.key}/tasks.md"
+        required: true
+    gates:
+      - id: tasks-generated
+        name: Task list generated
+        kind: artifact
+        provider: repo
+        path: "specs/{item.key}/tasks.md"
+        passes_when: { present: true }
+
+  - id: analyze
+    name: Analyze
+    description: Cross-artifact consistency between spec, plan, and tasks.
+    awaits_human: true
+    maps:
+      repo: ["analyze"]
+    gates:
+      - id: findings-resolved
+        name: Analyze findings resolved
+        kind: field
+        provider: repo
+        field: "gates.analyze"
+        passes_when: { equals: "resolved" }
+        awaits_human: true
+
+  - id: implement
+    name: Implement
+    description: Tasks executed against the plan, with the quality gates enforced.
+    maps:
+      repo: ["implement"]
+    artifacts:
+      - id: progress
+        name: Task progress
+        kind: markdown
+        provider: repo
+        path: "specs/{item.key}/tasks.md"
+        required: true
+    gates:
+      - id: verify
+        name: npm run verify passes
+        kind: check
+        provider: gates
+        check: verify
+        blocking: true
+        configurable: true
+
+  - id: shipped
+    name: Shipped
+    description: The feature is delivered and leaves the active list.
+    terminal: true
+    maps:
+      repo: ["shipped"]
+
+# ─── Transitions ─────────────────────────────────────────────────────────────
+# Only what the order cannot express: analyze sends work back rather than forward.
+transitions:
+  - from: analyze
+    to: plan
+    name: Findings require re-planning
+  - from: analyze
+    to: tasks
+    name: Findings require new tasks
+  - from: implement
+    to: shipped
+    requires: [verify]
+
+# ─── Write-back ──────────────────────────────────────────────────────────────
+# Absent means every write is disabled, which is what v1.0 does regardless.
+
+# ─── Per-repository configuration ────────────────────────────────────────────
+repo_config:
+  - key: providers.repo.root
+    title: Repository root
+    type: string
+    required: false
+    default: "."
+    description: Where specs/ lives, relative to the registered repository.
+  - key: gates.verify.check
+    title: Verification check name
+    type: string
+    required: false
+    default: verify
+    description: The recorded check whose result the implement gate reads.

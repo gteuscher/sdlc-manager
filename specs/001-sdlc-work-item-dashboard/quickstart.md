@@ -156,6 +156,26 @@ are neither dropped from the list nor reassigned to an adjacent state.
 **Expected**: full function. A filesystem lifecycle has no remote dependency and must not acquire
 one.
 
+### V12 — Spec Kit tracking itself *(SC-003 · SC-014 · FR-041)*
+
+1. Register this repository, associating it with the **Spec Kit** package at
+   `.specify/`.
+
+**Expected**: each directory under `specs/` appears as one work item — `items.unit`
+is `feature`, so the interface calls them features rather than "items". This
+feature resolves to **Implement**; the constitution check reads as passed from the
+state file; the verification gate reads **not evaluated**, because nothing has
+recorded a result for it. Feature `002` sits in **Clarify** and carries an
+*awaiting input* marker, because its reviewer decision is deliberately unrecorded.
+
+**Why this scenario is the important one**: the fixture lifecycles were written to
+fit this implementation and so cannot falsify SC-003. Spec Kit's manifest was
+written against [contracts/sdlc-manifest.md](contracts/sdlc-manifest.md) instead.
+Before it existed, Spec Kit encoded its stages only in skill prose, and the
+dashboard was required to report it as unsupported — assert that first
+(`tests/unit/dogfood.speckit.test.ts`), because a dogfood that skips the
+unsupported case is testing the easy half.
+
 ---
 
 ## Gate coverage
