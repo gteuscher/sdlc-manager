@@ -52,9 +52,20 @@ is user-supplied configuration consumed at runtime. Specifically:
   only. If it requires a code change, the design violates this principle.
 - Gates are evaluated through a uniform gate interface, so validation gates, verification gates,
   and integration-backed gates are interchangeable from the engine's perspective.
+- A workflow definition is sourced from the SDLC's own agent package — the skill or plugin that
+  executes that lifecycle — so the definition the agent acts on and the definition this
+  application renders are one artifact. This application MUST NOT keep a second copy that can
+  drift from it.
+- A lifecycle MUST be read from that package's declarative manifest. This application MUST NOT
+  infer any part of a lifecycle from the prose of an agent's skills, prompts, commands, or
+  documentation: a state that is described but not declared does not exist. A package carrying no
+  manifest is reported as unsupported rather than guessed at.
 
 Rationale: the product's stated value is adapting to *various* user-defined agentic SDLCs. A
-built-in lifecycle would reduce it to one opinionated workflow.
+built-in lifecycle would reduce it to one opinionated workflow. Sourcing the definition from the
+agent's own package is what keeps the dashboard honest — it renders what the agent is actually
+executing — and reading only the declared manifest is what keeps it decoupled: prompt wording is
+edited freely by agent authors and would be a catastrophic thing to parse.
 
 ### III. Integrations Behind Adapter Contracts
 
@@ -335,4 +346,4 @@ any principle that has become unenforceable, disproportionate to the project's s
 routinely waived MUST be amended or removed rather than silently ignored. Runtime development
 guidance for agents belongs in `CLAUDE.md`, which MUST remain consistent with this constitution.
 
-**Version**: 2.0.0 | **Ratified**: 2026-09-11 | **Last Amended**: 2026-09-11
+**Version**: 2.1.0 | **Ratified**: 2026-09-11 | **Last Amended**: 2026-09-11

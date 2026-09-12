@@ -132,6 +132,11 @@ second is listed with a validation error naming the offending field.
    retained.
 4. **Given** a repository whose configuration references a provider with no credentials, **When**
    the view renders, **Then** it reports which provider needs configuring rather than failing.
+5. **Given** an installed agent package that declares no lifecycle manifest, **When** the engineer
+   tries to associate a repository with it, **Then** it is offered as unsupported with the missing
+   manifest named, and the association is refused.
+6. **Given** a registered repository, **When** the view renders, **Then** it shows which SDLC
+   package and version that repository follows.
 
 ---
 
@@ -185,6 +190,15 @@ conversations.
   unconfigured provider prompt for configuration naming the provider.
 - **An item needs input but the engineer is not looking at the app.** The attention signal must
   survive a restart — it is derived from the system of record, not from session memory.
+- **An agent package declares no manifest.** A skill or plugin that executes a lifecycle but never
+  enumerates it must be reported as unsupported, naming what is missing, rather than having its
+  stages guessed from instruction text.
+- **A package's manifest disagrees with its own skills.** The manifest is authoritative for what
+  the dashboard renders; a state an agent's prose refers to but the manifest omits is not shown.
+- **An SDLC package is upgraded while items are in flight**, adding, renaming, or removing states.
+  Items must survive the upgrade, with any whose recorded state has vanished marked unmapped.
+- **Two repositories use different versions of the same SDLC package**, and each must render
+  against the version it is associated with.
 - **A repository is registered twice**, or registered at a path that no longer exists.
 - **Very large item volume.** An engineer with many hundreds of active items across repositories
   still gets a usable list, ordered so that items needing attention appear first.
@@ -307,11 +321,39 @@ conversations.
 - **FR-038**: System MUST treat any locally stored copy of work-item data as a cache that can be
   deleted and rebuilt from the systems of record.
 
+#### SDLC definition sourcing
+
+- **FR-039**: System MUST source an SDLC definition from the SDLC's own agent package — the skill
+  or plugin that an LLM agent loads in order to execute that lifecycle — so that the definition the
+  agent executes and the definition the dashboard renders are one artifact, not two copies that can
+  drift apart.
+- **FR-040**: System MUST read the definition from a declarative, machine-readable manifest carried
+  by that package, enumerating the lifecycle's ordered states, the gates each state declares, and
+  the artifacts each state carries.
+- **FR-041**: System MUST NOT infer any part of a lifecycle from the prose of an agent package's
+  skills, prompts, commands, or documentation. A state that is mentioned only in instruction text
+  and not present in the manifest does not exist as far as the dashboard is concerned.
+- **FR-042**: System MUST discover the SDLC packages available on the engineer's machine and
+  present them as the set of definitions a repository can be associated with.
+- **FR-043**: System MUST record which SDLC package, at which version, a repository is associated
+  with, and MUST surface that version in the repository view.
+- **FR-044**: System MUST validate a package's manifest before use, rejecting an invalid one with a
+  message naming the offending field and reason, and MUST NOT partially load a malformed manifest.
+- **FR-045**: System MUST report an agent package that carries no manifest, or an unreadable one, as
+  unsupported — naming what is missing — rather than guessing a lifecycle for it.
+- **FR-046**: System MUST continue to present items belonging to a repository whose SDLC package
+  has been upgraded, marking any item whose recorded state no longer exists in the new manifest as
+  unmapped rather than dropping or reassigning it.
+
 ### Key Entities
 
-- **SDLC Definition**: A user-authored description of one software development lifecycle: its
-  ordered states, the transitions allowed between them, the gates each state must satisfy, and the
-  artifacts each state carries. Supplied as configuration; the application ships none of its own.
+- **SDLC Package**: The skill or plugin an LLM agent loads in order to execute one software
+  development lifecycle. It is the unit the engineer installs, versions, and associates a
+  repository with, and it is where the SDLC Definition lives.
+- **SDLC Definition**: The declarative manifest carried by an SDLC Package describing that
+  lifecycle: its ordered states, the transitions allowed between them, the gates each state must
+  satisfy, and the artifacts each state carries. Read by both the agent that executes the lifecycle
+  and this dashboard, so the two cannot disagree. The application ships no definitions of its own.
 - **State**: One named stage within an SDLC Definition, carrying zero or more gates and zero or
   more artifact declarations.
 - **Gate**: A validation or verification condition attached to a state, with a result of passed,
@@ -357,6 +399,11 @@ conversations.
   any system of record — no file in a repository altered, no ticket updated, no comment posted.
 - **SC-012**: Every item listed qualifies under a stated ownership rule, and an item the engineer
   neither owns in the tracker nor holds declared markdown artifacts for does not appear.
+- **SC-013**: Upgrading an SDLC package to a version declaring an additional state causes that
+  state to appear in the interface on next load, with no change to the application.
+- **SC-014**: Every state, gate, and artifact rendered for a lifecycle is present in that SDLC
+  package's manifest; none is derived from the package's prose, and none declared in the manifest
+  is omitted.
 
 ## Planned Direction (beyond v1.0)
 
@@ -386,9 +433,16 @@ are constraints on how the v1.0 requirements should be satisfied.
   engineer's because the tracker says it is assigned to them; a file-backed item is theirs because
   the declared markdown artifacts for it exist in their repository. Workflows composing both can
   qualify an item either way.
-- **SDLC definitions are authored outside this application**, as versioned, human-editable files
-  of the kind the reference SDLC uses — YAML declaring states and gates. v1.0 reads and validates
-  them; an in-app definition editor is out of scope.
+- **SDLC definitions are authored outside this application**, inside the agent skill or plugin that
+  executes the lifecycle, as versioned human-editable declarations of the kind the reference SDLC
+  uses — YAML declaring states and gates. v1.0 reads and validates them; an in-app definition
+  editor is out of scope.
+- **An agent package must declare its lifecycle to be supported.** Knowing the states well enough
+  to act on them is not sufficient; the dashboard needs them enumerated in a manifest. Existing
+  harnesses that encode their stages only in skill prose will need that manifest added before this
+  dashboard can render them — this is a change to the SDLC package, not a gap in the dashboard.
+- **A repository follows one SDLC package version at a time**, and upgrading that package is an
+  explicit act rather than something the dashboard does on the engineer's behalf.
 - **A repository is the unit of registration.** Work items belong to a repository, and a repository
   follows exactly one SDLC definition at a time.
 - **Multiple SDLC definitions coexist.** Different registered repositories may follow different
@@ -414,7 +468,9 @@ are constraints on how the v1.0 requirements should be satisfied.
 
 ## Dependencies
 
-- One or more SDLC definitions authored in a supported configuration format.
+- One or more SDLC packages — agent skills or plugins — installed on the engineer's machine, each
+  carrying a declarative lifecycle manifest in a supported format. An existing harness that does
+  not yet declare its states must add that manifest before this dashboard can render it.
 - At least one registered repository containing work items.
 - For issue-tracker-backed workflows: credentials for that tracker, supplied by the engineer.
 - For test-result artifacts: a provider that publishes results the application can read.
