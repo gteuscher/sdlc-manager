@@ -85,8 +85,11 @@ does not decide what an engineer should be told.
    gets today's behaviour, and an engineer who has never heard of this feature
    gets a bounded list.
 2. The control to include it is **persistently visible**, not hidden behind a
-   menu — it is the only thing telling an engineer that finished work exists at
-   all (FR-002), and §5 explains why there is no count beside it.
+   menu — it is the only thing telling an engineer that the list is withholding
+   anything (FR-002). It says finished work is **not shown**; it does not say any
+   exists, because that is unknowable until it is fetched, and §5 explains why no
+   count sits beside it. The distinction is small and load-bearing: a control that
+   promised finished work would be lying in every repository that has none.
 3. When included, each finished item is distinguishable **without relying on
    colour** and names the state it finished in, as that state's own lifecycle
    names it (FR-003).

@@ -58,15 +58,16 @@ look at it is asking to be trusted without offering any way to check.
 
 **Independent Test**: Register a repository whose lifecycle declares a terminal
 state and which has at least one item resting in it. Confirm the item is absent
-from the list by default, that the list says finished work exists, that one
-deliberate action brings it into view named and marked as finished, and that
-opening it shows everything an active item shows.
+from the list by default, that the list says plainly it is withholding finished
+work and offers to show it, that one deliberate action brings it into view named
+and marked as finished, and that opening it shows everything an active item shows.
 
 **Acceptance Scenarios**:
 
 1. **Given** a repository with both active and finished items, **When** the engineer
    opens the workbench, **Then** only the active items are listed, and the list
-   conveys that finished work exists and is not being shown.
+   says plainly that finished work is not being shown and offers to show it —
+   without asserting how much of it there is, or that there is any.
 2. **Given** that list, **When** the engineer chooses to include finished work,
    **Then** the finished items appear, each marked as finished in a way that does
    not rely on colour, and each showing the state it finished in as its own
@@ -174,8 +175,12 @@ address, and open it fresh. All three come back together.
 
 - **FR-001**: The item list MUST offer an explicit, discoverable way to include work
   its lifecycle considers finished, and MUST exclude it by default.
-- **FR-002**: The list MUST convey that finished work exists and is not currently
-  shown, rather than leaving its absence to be noticed.
+- **FR-002**: The list MUST convey that finished work is **not currently shown**,
+  and MUST make including it discoverable without prior knowledge of the feature.
+  It MUST NOT claim that finished work *exists*, or how much of it there is, while
+  it is not showing it: that is not knowable without fetching the very thing being
+  withheld, and a claim the application cannot prove is one it does not make
+  (Principle X, [research.md §5](research.md)).
 - **FR-003**: When included, a finished item MUST be distinguishable from active
   work **without relying on colour**, and MUST show the state it finished in as
   that state's own lifecycle names it.
@@ -263,7 +268,7 @@ guarantees.
 - **SC-001**: An engineer can confirm that a named item finished, and in which
   state, without leaving the workbench and without editing an address by hand.
 - **SC-002**: An engineer who has not seen this feature before can discover that
-  finished work exists and bring it into view within 30 seconds.
+  finished work **can be shown**, and bring it into view, within 30 seconds.
 - **SC-003**: With finished work excluded, every item listed is one its own
   lifecycle considers in flight — demonstrated across at least two different
   lifecycles with different state vocabularies.

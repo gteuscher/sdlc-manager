@@ -93,7 +93,8 @@ state it finished in, and that opening it shows everything an active item shows.
 ### Tests for User Story 1
 
 - [ ] T009 [P] [US1] Test the filter branch in `tests/unit/items.aggregate.test.ts`: absent and `false` exclude terminal items; `true` includes them; and **naming a `stateId` still returns terminal items in that state**, since that rule is retained rather than replaced (data-model.md)
-- [ ] T010 [P] [US1] Test the default and the control in `tests/component/ItemList.test.tsx`: finished work is absent on first render (FR-001), a persistently visible control includes it (FR-002), and excluding returns the list to exactly what it was
+- [ ] T010 [P] [US1] Test the default and the control in `tests/component/ItemList.test.tsx`: finished work is absent on first render (FR-001), a persistently visible control includes it, and excluding returns the list to exactly what it was
+- [ ] T010a [P] [US1] Test what the control **claims**, in `tests/component/ItemList.test.tsx` (FR-002): its accessible name says finished work is not shown and offers to show it; it renders identically in a repository with **no** finished work at all; and **nothing on screen asserts that finished work exists or how much there is** while it is hidden. ⚠️ The obvious test here — "a control is present" — passes whether or not FR-002 holds, which is how 003's W6 defect shipped: T030 asserted the detail did not change and was true while the tab silently reverted. Assert the claim, not the element
 - [ ] T011 [P] [US1] Test the marking in `tests/component/ItemList.test.tsx`: a finished row is distinguishable **without relying on colour** and names the state it finished in as that lifecycle names it (FR-003)
 - [ ] T012 [P] [US1] Test that filters narrow finished work in `tests/component/ItemList.test.tsx`: repository, SDLC, state and search narrow finished items exactly as they narrow active ones (FR-006) — finished work is more of the same list, not a second list
 - [ ] T013 [P] [US1] Test that the detail is undisturbed in `tests/component/Workbench.test.tsx`: with an item open, including and then excluding finished work leaves the detail pane showing the same item (FR-005, SC-008). This is 003's FR-014 rule applied to a new control, and a well-meaning refetch is what would break it
@@ -125,6 +126,12 @@ register it. Confirm the repositories view reports it by name with the consequen
 and that the repository still registers and its items still appear and open.
 
 **Independent of US1.** It touches a different view and a different projection.
+
+**⚠️ CRITICAL**: this phase has the same red-build window Phase 2 has, and it is
+easier to miss because the tests come first. `terminalStateCount` is a **required**
+field, so T024–T028 reference something that does not exist until T029 adds it and
+T031 supplies it to the fixtures. Either land T029 and T031 before the tests, or
+accept a red build across the phase — but do not stop in the middle of it.
 
 ### Tests for User Story 2
 
@@ -172,7 +179,7 @@ item, copy the address, and open it fresh. All four come back.
 ## Phase 6: Polish & Cross-Cutting Concerns
 
 - [ ] T038 **Prove SC-006.** Run `npx vitest run` and confirm every 001 and 003 suite passes, and record which files were edited and why against the T001 baseline. The expected edits are the fixture lines from T006 and T031 — **any suite needing a change beyond supplying a new field is a finding, not a chore**
-- [ ] T039 Run quickstart scenarios **B1–B15** against a built application and record the results in `specs/004-bound-active-list/baseline.md`, including B14's re-run of 001's V1–V5 and 003's W1–W12 (SC-006) as the load-bearing one
+- [ ] T039 Run quickstart scenarios **B1–B15** against a built application and record the results in `specs/004-bound-active-list/baseline.md`, including B14's re-run of 001's V1–V5 and 003's W1–W12 (SC-006) as the load-bearing one. B14 also re-runs **001's V9, read-only** — the only coverage FR-019 has anywhere, and worth having because this is the first feature to speak of an item being *reopened*
 - [ ] T040 [P] Extend `tests/smoke/scale.spec.ts` to include finished work in the 220-item measurement, so SC-007 covers the longer list rather than the active one alone
 - [ ] T041 [P] Confirm `npm run size` passes and record the actual initial-JS figure against the ~141.8 KB projection in research.md §7. **If it fails, trim or move `Items` behind a lazy boundary — do not raise the budget**
 - [ ] T042 [P] Run the Principle II boundary test from plan.md: `grep -rn "terminal" src/renderer` and confirm every hit **reads** the field and none **decides** it. Compare against the T002 baseline

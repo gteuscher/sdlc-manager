@@ -157,13 +157,20 @@ is unaffected.
 
 ---
 
-## 5. Conveying that finished work exists, without inventing a count
+## 5. Saying what is withheld, without inventing a count
 
 **Decision**: the control itself is the conveyance. No finished-item count crosses
-the wire.
+the wire, and the list claims only that finished work is **not shown** — never
+that any exists.
 
-**Rationale**: FR-002 asks the list to convey that finished work exists and is not
-shown. The instinct is a number — "12 finished items hidden" — and the instinct is
+**Rationale**: the first draft of FR-002 asked the list to convey that finished
+work *exists* and is not shown. This section is what showed that to be
+unsatisfiable, and the requirement was amended rather than the design bent to fit
+it: the renderer cannot know whether any finished work exists without fetching the
+very thing it is withholding, so a control promising it would be lying in every
+repository that has none.
+
+The instinct is a number — "12 finished items hidden" — and the instinct is
 wrong here, because the renderer cannot know that number without either fetching
 the finished items it is trying not to fetch, or changing `listItemsReplySchema`
 from an array to an object carrying a count.

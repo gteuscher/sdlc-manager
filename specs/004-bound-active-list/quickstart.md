@@ -151,7 +151,13 @@ An engineer must not be able to conclude their repository is broken.
 
 ### B14 — Nothing was lost *(FR-018 · SC-006)*
 
-Re-run 001's scenarios **V1–V5** and 003's **W1–W12**.
+Re-run 001's scenarios **V1–V5**, 001's **V9 (read-only)**, and 003's **W1–W12**.
+
+V9 is in this list deliberately. FR-019 forbids this application closing,
+transitioning, **reopening** or writing anything to a system of record, and no
+other scenario or task covers it. This is also the first feature to use the word
+"reopen" at all — B12 asks an item to come *back* from a terminal state — so it is
+the first place someone could reasonably think the dashboard should help.
 
 **Expected**: every one still passes. This feature changes which items are listed,
 which is exactly the change that quietly drops an ordering rule or a marker. The
