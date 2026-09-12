@@ -79,10 +79,11 @@ the wire is governed by Principle IX.
 Rationale: integrations are the most volatile and least controllable part of the system;
 isolating them keeps the core deterministic and keeps tests offline.
 
-### IV. Test-First and Fully Testable (NON-NEGOTIABLE)
+### IV. Fully Testable (NON-NEGOTIABLE)
 
-- Tests are written before the implementation they cover, MUST fail first, and MUST pass only
-  once the behavior exists. Red-Green-Refactor is enforced.
+- Every behavior MUST be covered by a test. Writing the test first is the recommended practice
+  and usually the fastest route, but the ordering is not a rule here: it cannot be verified after
+  the fact, and a rule nothing can check is not a rule.
 - Workflow engine logic — state resolution, transition legality, gate evaluation — MUST be pure
   and unit-testable without rendering a component or touching the network.
 - React components MUST be testable through their public behavior: rendered output and user
@@ -92,7 +93,7 @@ isolating them keeps the core deterministic and keeps tests offline.
   another indicates a leak of provider specifics into the engine.
 - Workflow definitions are untrusted user input: every schema rule MUST have a test asserting
   that a violating definition is rejected at runtime. TypeScript types alone do not satisfy this.
-- Every bug fix MUST begin with a regression test that reproduces the defect.
+- Every bug fix MUST include a regression test that reproduces the defect.
 - The full unit test suite MUST run offline and MUST be invocable with a single command.
 
 Rationale: a configuration-driven engine has a large behavior space that only tests can pin
@@ -103,8 +104,9 @@ down; untestable coupling between engine, provider, and UI is the main risk to t
 - The current state of every tracked work item MUST be derived from the system of record
   designated by the workflow, never from transient UI state or component-local memory.
 - Every state transition and gate evaluation MUST produce a durable, inspectable record that
-  includes what changed, when, and why the gate passed or failed. Where the system of record can
-  hold that record (a file commit, an issue comment or transition), it MUST be written there.
+  includes what changed, when, and why the gate passed or failed. That record is kept locally.
+  Writing it back to the system of record (an issue comment, a file commit) MUST be opt-in per
+  workflow: this application does not add noise to someone's tracker by default.
 - Gate results MUST distinguish "passed", "failed", and "not evaluated". Absence of a result is
   never treated as success.
 - Stale data MUST be visibly stale: the UI MUST indicate when displayed state was last
@@ -160,9 +162,9 @@ hidden coupling is the mechanism by which engine logic becomes untestable.
 
 ### IX. The Network Is the Boundary
 
-Every fetch is a contract. Requests and responses have schemas with versions. Validation happens
-at the boundary, not scattered through components. Treat the server as an untrusted producer:
-never render raw server strings, always validate before use.
+Every fetch is a contract. Requests and responses have schemas, validated at the boundary rather
+than scattered through components. Treat every external producer as untrusted: never render raw
+provider strings, always validate before use.
 
 Provider and integration responses are covered by this rule: Jira issue fields, GitHub issue
 bodies, and markdown file contents are all untrusted producer output. Principle III governs *how*
@@ -174,57 +176,50 @@ No loading spinner without a timeout. No error state without a retry path. No em
 copy. A component that can render "nothing" for any reason must render a deliberate "nothing",
 not a blank frame.
 
+Provider-bound actions — a Jira transition, a refresh from the system of record — are bounded by
+a remote service. They MUST show a pending state promptly and MUST time out with a retry path
+rather than spinning indefinitely; ten seconds is the default ceiling.
+
 ### XI. Accessibility Is a Correctness Property
 
-Keyboard navigation, focus order, ARIA roles, and color contrast are not polish. They are either
-correct or broken. Every interactive element must be reachable by keyboard and announced by a
-screen reader. No `<div onClick>` in new code.
+Keyboard navigation, focus order, ARIA roles, and color contrast are not polish. Every
+interactive element MUST be reachable and operable by keyboard and MUST carry a correct role and
+accessible name. No `<div onClick>` in new code.
 
-### XII. Measure What Users Feel
+Scope note: this is enforced by an accessibility lint ruleset and automated checks against
+rendered components — the subset a machine can verify. Manual screen-reader certification is out
+of scope for a single maintainer and is not claimed here. Choosing headless, accessibility-
+complete UI primitives is what makes the rest of it achievable by default.
 
-Core Web Vitals (LCP, INP, CLS) are the latency budget, not nice-to-haves. Regressions in these
-are treated like test failures. Bundle size is tracked per route; new dependencies that add more
-than the route's remaining budget require a written justification.
+### XII. Budget the Dependency Weight
 
-Because this application ships to individual machines rather than a fleet (Principle I), budgets
-MUST be enforced by repeatable local and CI measurement against the fixed scenario below, not by
-field telemetry. Interaction latency is the governing concern: the dashboard's characteristic
-load is a long, filterable list of work items, which degrades on interaction well before it
-degrades on paint.
+Bundle size is tracked per route. A new dependency that pushes a route past its budget requires a
+written justification in the commit message, or a smaller alternative.
 
-**Fixed measurement scenario**: 1,000 work items across 8 states with 3 gates per state, backed
-by two composed provider fakes (Principles III, IV, VI). No live network call may participate in
-a budget measurement; results MUST be deterministic and reproducible in CI.
-
-**Budgets**, measured cold against the fixed scenario on a packaged build:
+**Budgets**, gzipped, measured on the production build:
 
 | Metric | Budget |
 | --- | --- |
-| Cold launch to interactive shell | 1.5 s |
-| LCP (renderer) | 800 ms |
-| INP, local interactions | 100 ms |
-| CLS | 0.05 |
-| Total Blocking Time (CI lab proxy) | 150 ms |
 | Initial JS, gzipped | 150 KB |
 | Each lazily-loaded route, gzipped | 60 KB |
 | Total application JS, gzipped | 400 KB |
 | Initial CSS, gzipped | 20 KB |
 
-These are localhost-and-disk numbers and are deliberately far below the public Core Web Vitals
-"good" thresholds, which assume real networks and mid-tier mobile CPUs. Adopting those public
-thresholds here would make this principle unenforceable.
+These govern parse and startup cost rather than download cost, since a packaged build ships its
+assets on disk. They survive as budgets because a size check in the verify command enforces them
+today, with no harness to build — they are the practical enforcement mechanism for the
+dependency discipline Principle VII asks for.
 
-An INP measurement between 100 ms and 200 ms is a warning that MUST be justified in the pull
-request; above 200 ms it blocks the merge. Every other budget blocks on exceedance.
+Runtime latency — launch time, LCP, INP, CLS — is deliberately **not** budgeted. Measuring it
+reliably on a packaged desktop build needs a harness disproportionate to this project, and an
+unenforced budget is worse than none: it states a guarantee nothing checks. If the dashboard
+becomes perceptibly slow, the response is to measure that specific interaction and fix it, and to
+amend this principle if a standing budget has by then earned its keep.
 
-Provider-bound actions — a Jira transition, a refresh from the system of record — are bounded by
-a remote service and therefore carry no latency budget. They MUST instead present a pending
-state within 100 ms and MUST time out within 10 s with a retry path, per Principle X.
-
-The JS budgets govern parse and startup cost, not download cost, since a packaged build ships
-its assets on disk. They remain binding because parse time is the dominant contributor to cold
-launch, and because the budget is the enforcement mechanism for dependency discipline under
-Principle VII.
+The 150 KB initial budget carries an architectural consequence worth stating up front: React, a
+router, a schema validator, a markdown parser, and a sanitizer come to roughly 90 KB before any
+application code, so markdown rendering MUST be lazy-loaded into the detail route rather than
+bundled into the shell.
 
 Changing a budget number is a PATCH amendment; adding or removing a budgeted metric is MINOR.
 
@@ -238,31 +233,11 @@ This principle governs *client* state. Domain state — the status of a tracked 
 governed by Principle V and is never client state; the "server state is cache, not store"
 rule here is the same rule Principle VI states for the system of record.
 
-### XIV. Commands Are Discoverable; Local Dev Matches CI
+### XIV. Commands Are Discoverable and Uniform
 
-Every repeatable action (dev, build, test, lint, typecheck, e2e) is a single named command listed
-in one place. The command a developer runs locally is the same command CI runs. If a new
-contributor cannot list every command in 30 seconds, the interface is broken.
-
-### XV. Value Is Realized at the User, Not at Merge
-
-A PR is not done until the change is in the hands of users, observable, and revertible.
-"Shipped" means delivered and monitored, not merged. For a locally-run application this means:
-
-- **In the hands of users**: included in a released, installable version, not merely on the main
-  branch.
-- **Observable**: the running application MUST expose local diagnostics — error detail and the
-  performance measurements of Principle XII — that a user can read on their own machine without
-  additional tooling. Remote telemetry, if it ever exists, MUST be opt-in and MUST NEVER carry
-  credentials, work-item content, or workflow definitions (Principles I and III).
-- **Revertible**: a user MUST be able to return to the previous working version by reinstalling
-  or pinning it, and any risky behavior MUST sit behind a configuration flag that can be turned
-  off without a code change.
-
-Rationale: the principle as commonly written assumes a deployed service with a monitored fleet.
-This product has neither, and adopting that framing verbatim would contradict Principle I. The
-obligation it encodes — that merging is not delivering, and that undelivered or unobservable
-work is not done — applies unchanged.
+Every repeatable action (dev, build, test, lint, typecheck, package) is a single named command
+listed in one place. Whatever runs locally is the same command any automation runs — no inline
+equivalents. If the command list cannot be read in 30 seconds, the interface is broken.
 
 ## Technology and Platform Constraints
 
@@ -270,7 +245,7 @@ work is not done — applies unchanged.
   compiler flag requires a constitutional amendment.
 - Exported module boundaries — the storage-provider interface, the adapter interface, the gate
   interface, and the workflow schema types — MUST carry explicit type annotations. Use of `any`
-  or an unchecked type assertion MUST be justified in the pull request.
+  or an unchecked type assertion MUST be justified in the commit message.
 - Static types are not runtime validation. All external input — workflow definitions, provider
   responses, user configuration — MUST be validated at the boundary before entering the engine,
   per Principle IX.
@@ -293,8 +268,8 @@ work is not done — applies unchanged.
   workflow engine is unit-testable without a DOM.
 - Any local cache or index MUST be file-based or embedded, requiring no separate server process,
   per Principle I.
-- Dependencies are added deliberately: each new runtime dependency MUST be justified in the pull
-  request against a simpler alternative and against the route's remaining bundle budget.
+- Dependencies are added deliberately: each new runtime dependency MUST be justified in the
+  commit message against a simpler alternative and against the route's remaining bundle budget.
 
 ## Development Workflow and Quality Gates
 
@@ -322,18 +297,15 @@ identically by the maintainer and by CI:
    of Principle XII.
 8. **Cold-start check** — a clean install, build, and smoke launch of a packaged build succeeds
    (Principle I).
-9. **Command parity** — CI invokes only named commands from the single command list, never an
-   inline equivalent (Principle XIV).
+9. **Command parity** — any automation invokes only named commands from the single command list,
+   never an inline equivalent (Principle XIV).
 
-**Self-attested.** These are not currently machine-checkable and MUST NOT be presented as gates:
+**Self-attested.** Not machine-checkable, and therefore MUST NOT be presented as gates:
 
-10. **Test-first discipline** — that a test preceded its implementation cannot be verified after
-    the fact. It is a working practice, not a checkable gate (Principle IV).
-11. **Runtime latency budgets** — launch, LCP, INP, CLS, and TBT (Principle XII) stay manual
-    until a measurement harness exists. TODO(PERF_HARNESS): build it or drop the metrics.
-12. **Design-judgment principles** — VII, VIII, IX, X, and XIII are largely not machine
-    checkable. They govern how code is written and are reviewed by the maintainer during
-    planning, not enforced at merge.
+10. **Design-judgment principles** — VII, VIII, IX, X, and XIII govern how code is written and
+    are largely not machine checkable. They are reviewed by the maintainer during planning, not
+    enforced at merge. Where a piece of one can be turned into a lint rule, it should be, and it
+    moves up into the machine-enforced list.
 
 Any deviation from a principle MUST be recorded in the commit message with its justification and
 the simpler alternative that was rejected.
@@ -363,4 +335,4 @@ any principle that has become unenforceable, disproportionate to the project's s
 routinely waived MUST be amended or removed rather than silently ignored. Runtime development
 guidance for agents belongs in `CLAUDE.md`, which MUST remain consistent with this constitution.
 
-**Version**: 1.0.0 | **Ratified**: 2026-09-11 | **Last Amended**: 2026-09-11
+**Version**: 2.0.0 | **Ratified**: 2026-09-11 | **Last Amended**: 2026-09-11
