@@ -1,0 +1,39 @@
+appId: dev.sdlcmanager.app
+productName: SDLC Manager
+copyright: SDLC Manager
+
+directories:
+  output: release
+  buildResources: build
+
+files:
+  - dist/**/*
+  - package.json
+
+# Principle I: an end user installs and launches without a development toolchain,
+# and without administrator privileges. Every target below is a per-user install.
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+
+mac:
+  target:
+    - target: dmg
+      arch: [x64, arm64]
+  category: public.app-category.developer-tools
+
+linux:
+  target:
+    - target: AppImage
+      arch: [x64]
+  category: Development
+
+# The packaged artifact embeds its own runtime; it must not require Node on the
+# user's machine (constitution, Technology Constraints).
+asar: true

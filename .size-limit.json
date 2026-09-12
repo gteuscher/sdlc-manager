@@ -1,0 +1,26 @@
+[
+  {
+    "name": "Initial JS (gzip)",
+    "path": ["dist/renderer/assets/*.js", "!dist/renderer/assets/MarkdownArtifact*.js"],
+    "limit": "150 KB",
+    "gzip": true
+  },
+  {
+    "name": "Lazy route: markdown artifact (gzip)",
+    "path": "dist/renderer/assets/MarkdownArtifact*.js",
+    "limit": "60 KB",
+    "gzip": true
+  },
+  {
+    "name": "Total application JS (gzip)",
+    "path": "dist/renderer/assets/*.js",
+    "limit": "400 KB",
+    "gzip": true
+  },
+  {
+    "name": "Initial CSS (gzip)",
+    "path": "dist/renderer/assets/*.css",
+    "limit": "20 KB",
+    "gzip": true
+  }
+]

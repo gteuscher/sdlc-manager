@@ -1,0 +1,533 @@
+/*
+ * The repositories view's own styles (User Story 4).
+ *
+ * Imported from `routes/Repositories.tsx` rather than added to `styles.css`, so
+ * it travels with the lazily-loaded route chunk instead of the initial CSS the
+ * document links in `index.html`. That keeps Principle XII's 20 KB initial CSS
+ * budget measuring what actually loads before first paint.
+ *
+ * It reuses the tokens and the shared `.button`, `.tag`, `.pending`, `.empty`
+ * and `.failure` classes declared there — this file adds no colours of its own
+ * and defines no new custom properties, so the light and dark palettes stay in
+ * one place.
+ *
+ * The same two rules apply here as everywhere: colour is never the only signal
+ * (an unsupported package and a provider needing a credential both say so in
+ * words), and focus is visible on every control, which the shared focus rule in
+ * `styles.css` already provides for buttons, inputs, and selects.
+ */
+
+.repos {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  max-width: 900px;
+}
+
+.repos__heading {
+  margin: 0;
+  font-size: 20px;
+}
+
+.repos__groups {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* ── One SDLC definition, and the repositories that follow it ─────────────── */
+
+.repo-group {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+  padding: 16px;
+}
+
+.repo-group__heading {
+  margin: 0;
+  font-size: 16px;
+}
+
+.repo-group__meta {
+  margin: 4px 0 12px;
+  color: var(--text-dim);
+  font-size: 13px;
+}
+
+.repo-group__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.repo {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+  padding: 12px;
+}
+
+.repo__name {
+  margin: 0 0 8px;
+  font-size: 15px;
+}
+
+.repo__facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin: 0 0 8px;
+}
+
+.repo__fact dt {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.repo__fact dd {
+  margin: 0;
+}
+
+.repo__fact code {
+  font-family: var(--mono);
+  font-size: 12px;
+  word-break: break-all;
+}
+
+.repo__version {
+  color: var(--text-dim);
+}
+
+.repo__note {
+  margin: 0 0 8px;
+  color: var(--text-dim);
+  font-size: 13px;
+}
+
+.repo__problem {
+  margin: 0 0 8px;
+  padding: 8px 10px;
+  border-left: 3px solid var(--attention-gate);
+  background: var(--attention-gate-bg);
+  color: var(--attention-gate);
+  font-size: 13px;
+}
+
+.repo__panel {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.repo__remove {
+  border-top: 1px dashed var(--border);
+  padding-top: 12px;
+}
+
+.repo__remove-heading {
+  margin: 0 0 4px;
+  font-size: 13px;
+}
+
+.repo__remove-copy {
+  margin: 0 0 8px;
+  color: var(--text-dim);
+  font-size: 13px;
+}
+
+.repo__remove-actions {
+  display: flex;
+  gap: 8px;
+}
+
+/* ── Providers ────────────────────────────────────────────────────────────── */
+
+.providers__heading {
+  margin: 0 0 4px;
+  font-size: 13px;
+}
+
+.providers__summary {
+  margin: 0 0 8px;
+  font-size: 13px;
+  color: var(--text-dim);
+}
+
+.providers__summary--action {
+  color: var(--text);
+}
+
+.providers__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.providers__item {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+  padding: 10px;
+}
+
+.providers__name {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 4px;
+}
+
+.providers__id {
+  font-weight: 600;
+}
+
+.providers__kind {
+  color: var(--text-dim);
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.providers__state--wanted {
+  background: var(--attention-input-bg);
+  color: var(--attention-input);
+}
+
+.providers__message {
+  margin: 0 0 8px;
+  font-size: 13px;
+}
+
+.providers__panel {
+  margin-top: 8px;
+}
+
+/* ── The credential form ──────────────────────────────────────────────────── */
+
+.credential {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-width: 46ch;
+  padding: 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--bg-sunken);
+}
+
+.credential__label {
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.credential__control {
+  padding: 6px 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+  color: var(--text);
+  font: inherit;
+  font-family: var(--mono);
+}
+
+.credential__note {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+.credential__outcome {
+  margin: 0;
+  font-size: 13px;
+}
+
+.credential__outcome--failed {
+  color: var(--attention-gate);
+}
+
+.credential__actions {
+  display: flex;
+  gap: 8px;
+}
+
+/* ── Generated configuration ──────────────────────────────────────────────── */
+
+.config__heading {
+  margin: 0 0 4px;
+  font-size: 13px;
+}
+
+.config__source,
+.config__none {
+  margin: 0 0 10px;
+  color: var(--text-dim);
+  font-size: 13px;
+}
+
+.config__fields {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-bottom: 12px;
+}
+
+.config__field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-width: 52ch;
+}
+
+.config__label {
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.config__required {
+  font-weight: 400;
+  color: var(--text-dim);
+}
+
+.config__control {
+  padding: 6px 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+  color: var(--text);
+  font: inherit;
+}
+
+.config__control--flag {
+  width: 18px;
+  height: 18px;
+}
+
+.config__control[aria-invalid='true'] {
+  border-color: var(--attention-gate);
+}
+
+.config__key,
+.config__description {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+.config__key code,
+.config__default code {
+  font-family: var(--mono);
+}
+
+.config__error {
+  margin: 0;
+  color: var(--attention-gate);
+  font-size: 13px;
+}
+
+.config__retained {
+  margin: 0 0 10px;
+  padding: 8px 10px;
+  border-left: 3px solid var(--attention-gate);
+  background: var(--attention-gate-bg);
+  color: var(--attention-gate);
+  font-size: 13px;
+}
+
+.config__saved {
+  margin: 0 0 10px;
+  color: var(--text-dim);
+  font-size: 13px;
+}
+
+.config__actions {
+  display: flex;
+  gap: 8px;
+}
+
+/* ── Registration ─────────────────────────────────────────────────────────── */
+
+.register,
+.packages {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+  padding: 16px;
+}
+
+.register__heading,
+.packages__heading {
+  margin: 0 0 8px;
+  font-size: 16px;
+}
+
+.register__form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  align-items: flex-start;
+}
+
+.register__field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  max-width: 52ch;
+}
+
+.register__label {
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.register__control {
+  padding: 6px 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+}
+
+.register__control[aria-invalid='true'] {
+  border-color: var(--attention-gate);
+}
+
+.register__hint,
+.register__none-lead {
+  margin: 0;
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+/*
+ * "No packages found" — the normal first run for anyone who has not installed a
+ * package into a default location, so it is styled as information rather than as
+ * a failure: the sunken ground every other read-only surface uses, no accent
+ * border, none of `.register__error`'s colour.
+ */
+.register__none {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-sunken);
+}
+
+.register__roots {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.register__root {
+  font-family: var(--mono);
+  font-size: 12px;
+  padding: 1px 5px;
+  border-radius: 3px;
+  background: var(--bg-raised);
+  overflow-wrap: anywhere;
+}
+
+.register__error {
+  margin: 0;
+  color: var(--attention-gate);
+  font-size: 13px;
+}
+
+.register__done {
+  margin: 0;
+  font-size: 13px;
+}
+
+.register__config {
+  width: 100%;
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+}
+
+.register__config-heading {
+  margin: 0 0 10px;
+  font-size: 13px;
+}
+
+/* ── Installed packages ───────────────────────────────────────────────────── */
+
+.packages__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.packages__item {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px;
+  background: var(--bg);
+}
+
+.packages__name {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 4px;
+}
+
+.packages__title {
+  font-weight: 600;
+}
+
+.packages__version {
+  color: var(--text-dim);
+  font-size: 13px;
+}
+
+.packages__state--unsupported {
+  background: var(--attention-gate-bg);
+  color: var(--attention-gate);
+}
+
+.packages__where code {
+  font-family: var(--mono);
+  font-size: 12px;
+  word-break: break-all;
+}
+
+.packages__where,
+.packages__detail,
+.packages__none {
+  margin: 0 0 4px;
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+.packages__problem {
+  margin: 4px 0 0;
+  padding: 8px 10px;
+  border-left: 3px solid var(--attention-gate);
+  background: var(--attention-gate-bg);
+  color: var(--attention-gate);
+  font-size: 13px;
+}

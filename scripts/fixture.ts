@@ -1,0 +1,1688 @@
+/**
+ * T049, T118 — the fixture generator.
+ *
+ * Creates the repositories, SDLC packages, and control files that quickstart.md's
+ * validation scenarios are run against. Everything it produces is offline: a
+ * filesystem system of record, markdown artifacts, and JSON result files. No
+ * network, no credentials, no service.
+ *
+ * Run directly by Node's native TypeScript support:
+ *
+ *   node scripts/fixture.ts create   <dir> [--sdlc alt] [--items N] [--prefix ABC] [--force]
+ *   node scripts/fixture.ts package  <dir> [--omit-manifest] [--force]
+ *   node scripts/fixture.ts fail     <providerId> <mode> [--dir <path>] [--clear]
+ *   node scripts/fixture.ts upgrade  <dir> (--remove-state <id> | --add-state <id>)
+ *
+ * Two constraints shape the code below and are not negotiable:
+ *
+ *   1. **Erasable syntax only.** Node strips types; it does not compile them. No
+ *      enums, parameter properties, namespaces, or decorators appear here.
+ *   2. **Self-contained.** Nothing is imported from `src/`, because the `@core/*`
+ *      path aliases do not resolve when Node runs this file directly, and nothing
+ *      is imported from `yaml`, because a script that depends on an install step
+ *      is not a fixture generator you can trust to bootstrap. YAML is emitted by
+ *      the small block-style writer in §2.
+ *
+ * Every manifest emitted here is valid against contracts/sdlc-manifest.md §5 and
+ * parses with `readManifest`. The rules most easily broken by a generator, and
+ * where they are honoured:
+ *
+ *   rule 8  — every non-terminal state declares `maps` for the state-owning
+ *             provider. See `defaultLifecycle` / `altLifecycle`, and `addState`,
+ *             which always maps the state it inserts.
+ *   rule 9  — no raw value maps to two states. `addState` checks the existing
+ *             vocabulary before claiming one.
+ *   rule 11 — `transitions.requires` names gates on the `from` state. `removeState`
+ *             drops any transition that a removal would leave dangling.
+ *   rule 12 — every `repo_config.key` resolves, and any gate it targets is
+ *             `configurable: true`. `removeState` drops config keys whose gate went
+ *             with the state.
+ *   rule 14 — locators template only `{item.key}`, which `items.identity` declares
+ *             via `correlate_on` and the named capture group in its pattern.
+ *   rule 15 — every `kind: manual` gate declares `evidence`.
+ */
+
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import path from 'node:path';
+import process from 'node:process';
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// §1  Manifest model
+// ═══════════════════════════════════════════════════════════════════════════════
+
+type GateKind = 'manual' | 'artifact' | 'check' | 'field';
+type ArtifactKind = 'markdown' | 'tracker' | 'test-results';
+type ConfigType = 'string' | 'number' | 'boolean';
+
+interface LocatorDoc {
+  provider?: string;
+  path?: string;
+  field?: string;
+  run?: string;
+  check?: string;
+}
+
+interface GateDoc {
+  id: string;
+  name: string;
+  kind: GateKind;
+  blocking?: boolean;
+  awaits_human?: boolean;
+  configurable?: boolean;
+  provider?: string;
+  evidence?: LocatorDoc;
+  passes_when?: Record<string, unknown>;
+  path?: string;
+  field?: string;
+  check?: string;
+}
+
+interface ArtifactDoc {
+  id: string;
+  name?: string;
+  kind: ArtifactKind;
+  provider: string;
+  path?: string;
+  required?: boolean;
+}
+
+interface StateDoc {
+  id: string;
+  name: string;
+  description?: string;
+  awaits_human?: boolean;
+  terminal?: boolean;
+  maps?: Record<string, string[]>;
+  artifacts?: ArtifactDoc[];
+  gates?: GateDoc[];
+}
+
+interface TransitionDoc {
+  from: string;
+  to: string;
+  name?: string;
+  requires?: string[];
+}
+
+interface ConfigDoc {
+  key: string;
+  title: string;
+  type: ConfigType;
+  required?: boolean;
+  default?: string | number | boolean;
+  description?: string;
+}
+
+interface ProviderDoc {
+  id: string;
+  kind: string;
+  root?: string;
+  state?: { path: string; field: string };
+  title_field?: string;
+  results?: { path: string };
+}
+
+interface ManifestDoc {
+  sdlc: number;
+  id: string;
+  name: string;
+  version: string;
+  description: string;
+  providers: ProviderDoc[];
+  ownership: { state: string; title: string; assignee: string; artifacts: string };
+  items: {
+    unit: string;
+    discover: { provider: string; glob: string }[];
+    identity: { correlate_on: string; patterns: Record<string, string> };
+  };
+  states: StateDoc[];
+  transitions: TransitionDoc[];
+  write_back: { transitions: boolean; gate_results: boolean };
+  repo_config: ConfigDoc[];
+}
+
+/** The comment block written above each top-level key, so the fixture reads as documentation. */
+const MANIFEST_COMMENTS: Record<string, string> = {
+  sdlc: 'Generated by scripts/fixture.ts. Valid against contracts/sdlc-manifest.md.\nEdit the generator, not this file — `create` rewrites it.\n\nContract and identity',
+  providers: 'Providers\nEvery external system this lifecycle reads. All of them are local here:\nthe fixture must work with networking disabled (quickstart V11).',
+  ownership: 'Field ownership (Principle VI)\nExactly one provider owns each field. Composition is legal; ambiguity is not.',
+  items: 'Item discovery and identity\nOne discovery match is one work item. `unit` is the noun the interface uses.',
+  states: 'States (ORDERED)\nArray position is the only ordering source.',
+  transitions: 'Transitions\nOnly what the order cannot express: rework loops and gated moves.',
+  write_back: 'Write-back\nEvery flag defaults false. This dashboard is read-only (FR-034).',
+  repo_config: 'Per-repository configuration (FR-024)\nEvery key resolves, and any gate targeted is configurable: true (rule 12).',
+};
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// §2  YAML emitter
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Block-style YAML for JSON-shaped data. Strings are single-quoted, which keeps
+ * the identity regexes (`(?<key>[A-Z]+-[0-9]+)/item\.json`) literal — a
+ * double-quoted scalar would read `\.` as an invalid escape and fail to parse.
+ */
+function quoteScalar(value: string): string {
+  return `'${value.replace(/'/g, "''")}'`;
+}
+
+function emitScalar(value: string | number | boolean | null): string {
+  if (value === null) return 'null';
+  if (typeof value === 'boolean') return value ? 'true' : 'false';
+  if (typeof value === 'number') return String(value);
+  return quoteScalar(value);
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function emitNode(value: unknown, indent: number): string[] {
+  const pad = ' '.repeat(indent);
+
+  if (Array.isArray(value)) {
+    const lines: string[] = [];
+    for (const entry of value) {
+      if (Array.isArray(entry) || isPlainObject(entry)) {
+        const inner = emitNode(entry, indent + 2);
+        const first = inner[0];
+        if (first === undefined) {
+          lines.push(`${pad}- ${Array.isArray(entry) ? '[]' : '{}'}`);
+          continue;
+        }
+        lines.push(`${pad}- ${first.slice(indent + 2)}`);
+        for (let i = 1; i < inner.length; i += 1) lines.push(inner[i] ?? '');
+      } else {
+        lines.push(`${pad}- ${emitScalar(entry as string | number | boolean | null)}`);
+      }
+    }
+    return lines;
+  }
+
+  if (isPlainObject(value)) {
+    const lines: string[] = [];
+    for (const [key, entry] of Object.entries(value)) {
+      if (entry === undefined) continue;
+      if (Array.isArray(entry)) {
+        if (entry.length === 0) {
+          lines.push(`${pad}${key}: []`);
+          continue;
+        }
+        lines.push(`${pad}${key}:`);
+        for (const line of emitNode(entry, indent + 2)) lines.push(line);
+      } else if (isPlainObject(entry)) {
+        const inner = emitNode(entry, indent + 2);
+        if (inner.length === 0) {
+          lines.push(`${pad}${key}: {}`);
+          continue;
+        }
+        lines.push(`${pad}${key}:`);
+        for (const line of inner) lines.push(line);
+      } else {
+        lines.push(`${pad}${key}: ${emitScalar(entry as string | number | boolean | null)}`);
+      }
+    }
+    return lines;
+  }
+
+  return [`${pad}${emitScalar(value as string | number | boolean | null)}`];
+}
+
+function emitManifest(manifest: ManifestDoc): string {
+  const lines: string[] = [];
+  for (const [key, value] of Object.entries(manifest as unknown as Record<string, unknown>)) {
+    if (value === undefined) continue;
+    const comment = MANIFEST_COMMENTS[key];
+    if (comment !== undefined) {
+      if (lines.length > 0) lines.push('');
+      for (const commentLine of comment.split('\n')) {
+        lines.push(commentLine === '' ? '#' : `# ${commentLine}`);
+      }
+    }
+    for (const line of emitNode({ [key]: value }, 0)) lines.push(line);
+  }
+  return `${lines.join('\n')}\n`;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// §3  The two lifecycles
+// ═══════════════════════════════════════════════════════════════════════════════
+
+type LifecycleKind = 'default' | 'alt';
+
+/**
+ * The filesystem provider settings contract. A provider implementation is written
+ * against exactly this shape: `state.path` locates the JSON holding one item's
+ * metadata, `state.field` is the dotted path to its raw state value inside that
+ * JSON, and `title_field` names the field carrying its title.
+ */
+function filesystemProvider(id: string, statePath: string, stateField: string): ProviderDoc {
+  return {
+    id,
+    kind: 'filesystem',
+    root: '.',
+    state: { path: statePath, field: stateField },
+    title_field: 'title',
+  };
+}
+
+/**
+ * The default lifecycle: six states, one gate of each of the four kinds, and a
+ * markdown system of record. This is what quickstart §Fixture repository describes
+ * and what V1, V3, V4, V9 and V10 are run against.
+ */
+function defaultLifecycle(): ManifestDoc {
+  return {
+    sdlc: 1,
+    id: 'fixture-standard',
+    name: 'Fixture Standard SDLC',
+    version: '2.0.0',
+    description:
+      'Six-state, markdown-backed lifecycle used by the dashboard validation scenarios. Entirely local: no tracker, no credentials, no network.',
+    providers: [
+      filesystemProvider('repo', 'docs/items/{item.key}/item.json', 'status'),
+      {
+        // A check-result source, so the lifecycle can declare a gate of kind
+        // `check`. Its results are files in the repository, so this stays offline.
+        id: 'ci',
+        kind: 'checks',
+        root: '.',
+        results: { path: 'docs/items/{item.key}/checks.json' },
+      },
+    ],
+    ownership: { state: 'repo', title: 'repo', assignee: 'repo', artifacts: 'repo' },
+    items: {
+      unit: 'item',
+      discover: [{ provider: 'repo', glob: 'docs/items/*/item.json' }],
+      identity: {
+        correlate_on: 'key',
+        patterns: { repo: 'docs/items/(?<key>[A-Z]+-[0-9]+)/item\\.json' },
+      },
+    },
+    states: [
+      {
+        id: 'spec',
+        name: 'Specification',
+        description: 'The change is described and agreed before any work starts.',
+        maps: { repo: ['spec', 'specification'] },
+        artifacts: [
+          {
+            id: 'spec-doc',
+            name: 'Specification',
+            kind: 'markdown',
+            provider: 'repo',
+            path: 'docs/items/{item.key}/spec.md',
+            required: true,
+          },
+        ],
+        gates: [
+          {
+            // kind: manual — rule 15 requires somewhere to read the decision from.
+            id: 'spec-approved',
+            name: 'Specification approved',
+            kind: 'manual',
+            awaits_human: true,
+            blocking: true,
+            evidence: { provider: 'repo', field: 'approvals.spec' },
+          },
+        ],
+      },
+      {
+        id: 'design',
+        name: 'Design',
+        description: 'How the change will be made, written down before it is made.',
+        maps: { repo: ['design'] },
+        artifacts: [
+          {
+            id: 'design-doc',
+            name: 'Design notes',
+            kind: 'markdown',
+            provider: 'repo',
+            path: 'docs/items/{item.key}/design.md',
+            required: true,
+          },
+        ],
+        gates: [
+          {
+            // kind: artifact — the condition is on the artifact's presence.
+            id: 'design-recorded',
+            name: 'Design recorded',
+            kind: 'artifact',
+            provider: 'repo',
+            path: 'docs/items/{item.key}/design.md',
+            passes_when: { present: true },
+            blocking: true,
+          },
+        ],
+      },
+      {
+        id: 'build',
+        name: 'Implementation',
+        description: 'The work itself, with its test results.',
+        maps: { repo: ['build', 'in-progress'] },
+        artifacts: [
+          {
+            id: 'impl-notes',
+            name: 'Implementation notes',
+            kind: 'markdown',
+            provider: 'repo',
+            path: 'docs/items/{item.key}/impl.md',
+            required: false,
+          },
+          {
+            id: 'test-results',
+            name: 'Test results',
+            kind: 'test-results',
+            provider: 'repo',
+            path: 'docs/items/{item.key}/tests.json',
+            required: false,
+          },
+        ],
+        gates: [
+          {
+            // kind: check — an external check result, configurable per repository.
+            id: 'unit-tests',
+            name: 'Automated tests pass',
+            kind: 'check',
+            provider: 'ci',
+            check: 'unit-tests',
+            blocking: true,
+            configurable: true,
+          },
+        ],
+      },
+      {
+        id: 'review',
+        name: 'Review',
+        description: 'A second pair of eyes. Removed by `fixture upgrade --remove-state review`.',
+        maps: { repo: ['review'] },
+        artifacts: [
+          {
+            id: 'review-notes',
+            name: 'Review notes',
+            kind: 'markdown',
+            provider: 'repo',
+            path: 'docs/items/{item.key}/review.md',
+            required: false,
+          },
+        ],
+        gates: [
+          {
+            // kind: field — a provider field holding a value.
+            id: 'review-approved',
+            name: 'Review approved',
+            kind: 'field',
+            provider: 'repo',
+            field: 'reviewStatus',
+            passes_when: { equals: 'approved' },
+            blocking: true,
+          },
+        ],
+      },
+      {
+        id: 'release',
+        name: 'Release',
+        description: 'Shipped, once a human says so.',
+        maps: { repo: ['release'] },
+        artifacts: [
+          {
+            id: 'release-notes',
+            name: 'Release notes',
+            kind: 'markdown',
+            provider: 'repo',
+            path: 'docs/items/{item.key}/release.md',
+            required: false,
+          },
+        ],
+        gates: [
+          {
+            id: 'release-approved',
+            name: 'Release approved',
+            kind: 'manual',
+            awaits_human: true,
+            blocking: true,
+            evidence: { provider: 'repo', field: 'approvals.release' },
+          },
+        ],
+      },
+      {
+        id: 'done',
+        name: 'Done',
+        description: 'Terminal. Items here leave the active list.',
+        terminal: true,
+        maps: { repo: ['done'] },
+        gates: [],
+      },
+    ],
+    transitions: [
+      { from: 'review', to: 'design', name: 'Sent back for rework' },
+      { from: 'build', to: 'review', requires: ['unit-tests'] },
+    ],
+    write_back: { transitions: false, gate_results: false },
+    repo_config: [
+      {
+        key: 'providers.repo.root',
+        title: 'Repository root',
+        type: 'string',
+        required: false,
+        default: '.',
+        description: 'Where in the repository the item folders live.',
+      },
+      {
+        key: 'gates.unit-tests.check',
+        title: 'CI check name',
+        type: 'string',
+        required: false,
+        default: 'unit-tests',
+        description: 'The named check whose result the automated-tests gate reads.',
+      },
+    ],
+  };
+}
+
+/**
+ * The alternate lifecycle. Deliberately not a variant of the first: a different
+ * state count, different state ids, a different raw-value vocabulary, a different
+ * mix of gate kinds and conditions, a different directory layout, and a different
+ * noun for one work item. V2's claim is that the second lifecycle needs no
+ * application change, and a near-copy would not test that.
+ */
+function altLifecycle(): ManifestDoc {
+  return {
+    sdlc: 1,
+    id: 'fixture-research',
+    name: 'Lab Research Pipeline',
+    version: '0.4.0',
+    description:
+      'Four-phase experiment pipeline. Nothing in common with the standard fixture but the contract itself.',
+    providers: [filesystemProvider('repo', 'research/{item.key}/experiment.json', 'phase')],
+    ownership: { state: 'repo', title: 'repo', assignee: 'repo', artifacts: 'repo' },
+    items: {
+      unit: 'experiment',
+      discover: [{ provider: 'repo', glob: 'research/*/experiment.json' }],
+      identity: {
+        correlate_on: 'key',
+        patterns: { repo: 'research/(?<key>[A-Z]+-[0-9]+)/experiment\\.json' },
+      },
+    },
+    states: [
+      {
+        id: 'intake',
+        name: 'Intake',
+        description: 'A question worth answering, written as a hypothesis.',
+        maps: { repo: ['intake', 'triage'] },
+        artifacts: [
+          {
+            id: 'hypothesis',
+            name: 'Hypothesis',
+            kind: 'markdown',
+            provider: 'repo',
+            path: 'research/{item.key}/hypothesis.md',
+            required: true,
+          },
+        ],
+        gates: [
+          {
+            id: 'hypothesis-recorded',
+            name: 'Hypothesis recorded',
+            kind: 'artifact',
+            provider: 'repo',
+            path: 'research/{item.key}/hypothesis.md',
+            passes_when: { present: true },
+            blocking: true,
+          },
+        ],
+      },
+      {
+        id: 'protocol',
+        name: 'Protocol',
+        description: 'The method, signed off before anyone runs anything.',
+        maps: { repo: ['protocol', 'method'] },
+        artifacts: [
+          {
+            id: 'protocol-doc',
+            name: 'Protocol',
+            kind: 'markdown',
+            provider: 'repo',
+            path: 'research/{item.key}/protocol.md',
+            required: true,
+          },
+        ],
+        gates: [
+          {
+            id: 'ethics-signoff',
+            name: 'Ethics sign-off',
+            kind: 'manual',
+            awaits_human: true,
+            blocking: true,
+            evidence: { provider: 'repo', field: 'signoffs.ethics' },
+          },
+        ],
+      },
+      {
+        id: 'analysis',
+        name: 'Analysis',
+        description: 'Results in, anomalies out.',
+        maps: { repo: ['analysis', 'analysing'] },
+        artifacts: [
+          {
+            id: 'findings',
+            name: 'Findings',
+            kind: 'markdown',
+            provider: 'repo',
+            path: 'research/{item.key}/findings.md',
+            required: false,
+          },
+          {
+            id: 'run-results',
+            name: 'Run results',
+            kind: 'test-results',
+            provider: 'repo',
+            path: 'research/{item.key}/results.json',
+            required: false,
+          },
+        ],
+        gates: [
+          {
+            id: 'analysis-complete',
+            name: 'Analysis complete',
+            kind: 'field',
+            provider: 'repo',
+            field: 'analysisStatus',
+            passes_when: { matches: '^(complete|verified)$' },
+            blocking: true,
+            configurable: true,
+          },
+          {
+            id: 'no-open-anomalies',
+            name: 'No open anomalies',
+            kind: 'artifact',
+            provider: 'repo',
+            path: 'research/{item.key}/anomalies.open.json',
+            passes_when: { absent: true },
+            blocking: true,
+          },
+        ],
+      },
+      {
+        id: 'archived',
+        name: 'Archived',
+        description: 'Terminal. The experiment is closed, whatever it showed.',
+        terminal: true,
+        maps: { repo: ['archived', 'retired'] },
+        gates: [],
+      },
+    ],
+    transitions: [
+      { from: 'analysis', to: 'protocol', name: 'Method revised, rerun required' },
+      { from: 'protocol', to: 'analysis', requires: ['ethics-signoff'] },
+    ],
+    write_back: { transitions: false, gate_results: false },
+    repo_config: [
+      {
+        key: 'providers.repo.root',
+        title: 'Research root',
+        type: 'string',
+        required: false,
+        default: '.',
+        description: 'Where in the repository the experiment folders live.',
+      },
+      {
+        key: 'gates.analysis-complete.field',
+        title: 'Analysis status field',
+        type: 'string',
+        required: false,
+        default: 'analysisStatus',
+        description: 'The experiment.json field the analysis-complete gate reads.',
+      },
+    ],
+  };
+}
+
+/** The minimal, valid lifecycle carried by `fixture package` when a manifest is not omitted. */
+function barePackageLifecycle(): ManifestDoc {
+  return {
+    sdlc: 1,
+    id: 'fixture-bare',
+    name: 'Fixture Bare Package',
+    version: '1.0.0',
+    description: 'The smallest lifecycle that is still valid. The counterpart to --omit-manifest.',
+    providers: [filesystemProvider('repo', 'notes/{item.key}/note.json', 'stage')],
+    ownership: { state: 'repo', title: 'repo', assignee: 'repo', artifacts: 'repo' },
+    items: {
+      unit: 'note',
+      discover: [{ provider: 'repo', glob: 'notes/*/note.json' }],
+      identity: {
+        correlate_on: 'key',
+        patterns: { repo: 'notes/(?<key>[A-Z]+-[0-9]+)/note\\.json' },
+      },
+    },
+    states: [
+      {
+        id: 'draft',
+        name: 'Draft',
+        description: 'The note is written down and agreed before anyone builds against it.',
+        maps: { repo: ['draft'] },
+        artifacts: [
+          {
+            id: 'note',
+            name: 'Note',
+            kind: 'markdown',
+            provider: 'repo',
+            path: 'notes/{item.key}/note.md',
+            required: true,
+          },
+        ],
+        gates: [
+          {
+            id: 'draft-signed-off',
+            name: 'Draft signed off',
+            kind: 'manual',
+            awaits_human: true,
+            blocking: true,
+            evidence: { provider: 'repo', field: 'signoffs.draft' },
+          },
+        ],
+      },
+      {
+        id: 'build',
+        name: 'Build',
+        description: 'The note becomes a change. Nothing ships from here without a build that ran.',
+        maps: { repo: ['build'] },
+        gates: [],
+      },
+      {
+        id: 'ship',
+        name: 'Ship',
+        description: 'Terminal. The change is out, and the note stops being active work.',
+        terminal: true,
+        maps: { repo: ['ship'] },
+        gates: [],
+      },
+    ],
+    transitions: [],
+    write_back: { transitions: false, gate_results: false },
+    repo_config: [],
+  };
+}
+
+function lifecycleFor(kind: LifecycleKind): ManifestDoc {
+  return kind === 'alt' ? altLifecycle() : defaultLifecycle();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// §4  Manifest mutations (fixture upgrade)
+// ═══════════════════════════════════════════════════════════════════════════════
+
+interface Change {
+  op: 'remove' | 'add';
+  state: string;
+}
+
+function titleCase(id: string): string {
+  return id
+    .split(/[-_]/)
+    .filter((part) => part.length > 0)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ');
+}
+
+function gateIdsOf(state: StateDoc): string[] {
+  return (state.gates ?? []).map((gate) => gate.id);
+}
+
+/**
+ * Removes a state, and everything a removal would otherwise leave dangling: any
+ * transition touching it, any transition requiring one of its gates (rule 11), and
+ * any `repo_config` key targeting one of its gates (rule 12).
+ *
+ * Items recorded as being in the removed state are left exactly as they are on
+ * disk. That is the whole point of V10: the dashboard must mark them unmapped and
+ * keep their raw value rather than reassigning them.
+ */
+function removeState(manifest: ManifestDoc, stateId: string): void {
+  const target = manifest.states.find((state) => state.id === stateId);
+  if (target === undefined) {
+    fail(
+      `state '${stateId}' is not declared by this package. Declared states: ${manifest.states.map((s) => s.id).join(', ')}`,
+    );
+  }
+  if (manifest.states.length <= 1) {
+    fail('refusing to remove the last remaining state: a manifest must declare at least one (rule 3)');
+  }
+
+  const orphanedGates = new Set(gateIdsOf(target));
+  manifest.states = manifest.states.filter((state) => state.id !== stateId);
+  manifest.transitions = manifest.transitions.filter((transition) => {
+    if (transition.from === stateId || transition.to === stateId) return false;
+    return !(transition.requires ?? []).some((gate) => orphanedGates.has(gate));
+  });
+  manifest.repo_config = manifest.repo_config.filter((field) => {
+    const [root, gate] = field.key.split('.');
+    return !(root === 'gates' && gate !== undefined && orphanedGates.has(gate));
+  });
+}
+
+/**
+ * Inserts a state before the first terminal one. It claims a raw value from the
+ * state-owning provider's vocabulary (rule 8) that no other state already claims
+ * (rule 9), and declares one markdown artifact alongside the existing ones.
+ */
+function addState(manifest: ManifestDoc, stateId: string): void {
+  if (manifest.states.some((state) => state.id === stateId)) {
+    fail(`state '${stateId}' is already declared by this package`);
+  }
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(stateId)) {
+    fail(`'${stateId}' is not a usable state id: it must start with a letter or digit and contain only letters, digits, dot, underscore, or hyphen`);
+  }
+
+  const owner = manifest.ownership.state;
+  const claimed = new Set<string>();
+  for (const state of manifest.states) {
+    for (const value of state.maps?.[owner] ?? []) claimed.add(value);
+  }
+  let raw = stateId;
+  if (claimed.has(raw)) raw = `${stateId}-stage`;
+  if (claimed.has(raw)) fail(`cannot find an unclaimed raw value for state '${stateId}' (rule 9)`);
+
+  // Derive the artifact directory from a locator the manifest already uses, so an
+  // added state's artifact templating stays inside items.identity (rule 14).
+  let artifactDir = 'docs/items/{item.key}';
+  for (const state of manifest.states) {
+    const first = (state.artifacts ?? [])[0];
+    if (first?.path !== undefined) {
+      artifactDir = path.posix.dirname(first.path);
+      break;
+    }
+  }
+
+  const inserted: StateDoc = {
+    id: stateId,
+    name: titleCase(stateId),
+    description: `Added by fixture upgrade --add-state ${stateId}.`,
+    maps: { [owner]: [raw] },
+    artifacts: [
+      {
+        id: `${stateId}-notes`,
+        name: `${titleCase(stateId)} notes`,
+        kind: 'markdown',
+        provider: manifest.ownership.artifacts,
+        path: `${artifactDir}/${stateId}.md`,
+        required: false,
+      },
+    ],
+    gates: [],
+  };
+
+  const terminalIndex = manifest.states.findIndex((state) => state.terminal === true);
+  if (terminalIndex === -1) manifest.states.push(inserted);
+  else manifest.states.splice(terminalIndex, 0, inserted);
+}
+
+function bumpVersion(version: string, op: 'remove' | 'add'): string {
+  const parts = version.split('.');
+  const major = Number(parts[0] ?? '0');
+  const minor = Number(parts[1] ?? '0');
+  if (!Number.isFinite(major) || !Number.isFinite(minor)) return op === 'remove' ? '2.0.0' : '1.1.0';
+  // Removing a state is breaking for any item sitting in it; adding one is not.
+  return op === 'remove' ? `${major + 1}.0.0` : `${major}.${minor + 1}.0`;
+}
+
+function applyChanges(manifest: ManifestDoc, changes: Change[]): void {
+  for (const change of changes) {
+    if (change.op === 'remove') removeState(manifest, change.state);
+    else addState(manifest, change.state);
+    manifest.version = bumpVersion(manifest.version, change.op);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// §5  Seeded items
+// ═══════════════════════════════════════════════════════════════════════════════
+
+type SeedRole = 'healthy' | 'awaiting' | 'failed' | 'unevaluated';
+
+interface Seed {
+  key: string;
+  title: string;
+  stateIndex: number;
+  role: SeedRole;
+}
+
+interface TestResults {
+  outcome: 'passed' | 'failed';
+  total: number;
+  passed: number;
+  failed: number;
+  skipped: number;
+  cases: { name: string; status: 'passed' | 'failed' | 'skipped' }[];
+}
+
+const DEFAULT_TITLES = [
+  'Paginate the audit log',
+  'Retire the legacy importer',
+  'Rate-limit the export endpoint',
+  'Correct timezone handling in digests',
+  'Split the settings screen',
+  'Cache the permissions lookup',
+  'Replace the deprecated date library',
+  'Report partial sync failures in place',
+];
+
+const ALT_TITLES = [
+  'Does prefetching reduce cold-start latency',
+  'Sensitivity of the ranker to stale features',
+  'Cost of the wider embedding window',
+  'Recall under adversarial paraphrase',
+  'Throughput ceiling of the batch writer',
+  'Drift in the weekly retraining set',
+];
+
+/** Two markers the whole fixture depends on: the curated roles, in state order. */
+function curatedSeeds(kind: LifecycleKind, prefix: string): Seed[] {
+  const titles = kind === 'alt' ? ALT_TITLES : DEFAULT_TITLES;
+  const title = (index: number): string => titles[index % titles.length] ?? `Work item ${index + 1}`;
+  const first = kind === 'alt' ? 201 : 101;
+  const key = (offset: number): string => `${prefix}-${first + offset}`;
+
+  if (kind === 'alt') {
+    // States: intake(0) protocol(1) analysis(2) archived(3, terminal)
+    return [
+      { key: key(0), title: title(0), stateIndex: 0, role: 'healthy' },
+      { key: key(1), title: title(1), stateIndex: 1, role: 'awaiting' },
+      { key: key(2), title: title(2), stateIndex: 2, role: 'failed' },
+      { key: key(3), title: title(3), stateIndex: 2, role: 'unevaluated' },
+      { key: key(4), title: title(4), stateIndex: 2, role: 'healthy' },
+      { key: key(5), title: title(5), stateIndex: 3, role: 'healthy' },
+    ];
+  }
+
+  // States: spec(0) design(1) build(2) review(3) release(4) done(5, terminal)
+  return [
+    { key: key(0), title: title(0), stateIndex: 0, role: 'awaiting' },
+    { key: key(1), title: title(1), stateIndex: 1, role: 'healthy' },
+    { key: key(2), title: title(2), stateIndex: 2, role: 'failed' },
+    { key: key(3), title: title(3), stateIndex: 3, role: 'unevaluated' },
+    { key: key(4), title: title(4), stateIndex: 3, role: 'healthy' },
+    { key: key(5), title: title(5), stateIndex: 4, role: 'healthy' },
+    { key: key(6), title: title(6), stateIndex: 5, role: 'healthy' },
+    { key: key(7), title: title(7), stateIndex: 2, role: 'healthy' },
+  ];
+}
+
+/**
+ * The curated seeds first, then healthy filler spread across the non-terminal
+ * states. Filler never lands in a terminal state, so `--items 200` really does
+ * produce 200 active items for SC-008 rather than 200 rows most of which have left
+ * the active list.
+ */
+function seedItems(kind: LifecycleKind, prefix: string, count: number, stateCount: number): Seed[] {
+  const curated = curatedSeeds(kind, prefix);
+  const seeds = curated.slice(0, Math.max(count, curated.length));
+  const titles = kind === 'alt' ? ALT_TITLES : DEFAULT_TITLES;
+  const first = kind === 'alt' ? 201 : 101;
+  const activeStates = Math.max(stateCount - 1, 1);
+
+  for (let index = curated.length; index < count; index += 1) {
+    seeds.push({
+      key: `${prefix}-${first + index}`,
+      title: `${titles[index % titles.length] ?? 'Work item'} (${index + 1})`,
+      stateIndex: index % activeStates,
+      role: 'healthy',
+    });
+  }
+  return seeds;
+}
+
+function testResults(key: string, outcome: 'passed' | 'failed'): TestResults {
+  const cases: { name: string; status: 'passed' | 'failed' | 'skipped' }[] = [
+    { name: `${key} · parses the input`, status: 'passed' },
+    { name: `${key} · rejects a malformed record`, status: 'passed' },
+    { name: `${key} · reports a partial failure in place`, status: outcome === 'failed' ? 'failed' : 'passed' },
+    { name: `${key} · round-trips through the cache`, status: 'passed' },
+    { name: `${key} · handles an empty page`, status: 'skipped' },
+  ];
+  return {
+    outcome,
+    total: cases.length,
+    passed: cases.filter((entry) => entry.status === 'passed').length,
+    failed: cases.filter((entry) => entry.status === 'failed').length,
+    skipped: cases.filter((entry) => entry.status === 'skipped').length,
+    cases,
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// §6  Filesystem helpers
+// ═══════════════════════════════════════════════════════════════════════════════
+
+let filesWritten = 0;
+
+function write(filePath: string, contents: string): void {
+  mkdirSync(path.dirname(filePath), { recursive: true });
+  writeFileSync(filePath, contents, 'utf8');
+  filesWritten += 1;
+}
+
+function writeJson(filePath: string, value: unknown): void {
+  write(filePath, `${JSON.stringify(value, null, 2)}\n`);
+}
+
+function readJson(filePath: string): unknown {
+  return JSON.parse(readFileSync(filePath, 'utf8')) as unknown;
+}
+
+function fail(message: string): never {
+  process.stderr.write(`fixture: ${message}\n`);
+  process.exit(1);
+}
+
+/**
+ * `create` replaces an existing fixture cleanly, which means deleting a directory
+ * the caller named. Two guards stand between that convenience and a bad afternoon:
+ * the target may not contain the working directory, and a directory that is not
+ * already a fixture is only replaced with --force.
+ */
+function prepareTarget(target: string, force: boolean): void {
+  const resolved = path.resolve(target);
+  const cwd = process.cwd();
+  if (resolved === path.parse(resolved).root) fail(`refusing to write a fixture to the filesystem root (${resolved})`);
+  if (cwd === resolved || cwd.startsWith(resolved + path.sep)) {
+    fail(`refusing to replace ${resolved}: the working directory is inside it`);
+  }
+
+  if (existsSync(resolved)) {
+    const isFixture = existsSync(path.join(resolved, '.sdlc-fixture', 'state.json'));
+    const isEmpty = readdirSync(resolved).length === 0;
+    if (!isFixture && !isEmpty && !force) {
+      fail(`${resolved} exists and was not created by this generator. Pass --force to replace it.`);
+    }
+    rmSync(resolved, { recursive: true, force: true });
+  }
+  mkdirSync(resolved, { recursive: true });
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// §7  Repository content
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function markdown(key: string, title: string, heading: string, body: string[]): string {
+  return [`# ${key} · ${heading}`, '', `**${title}**`, '', ...body, ''].join('\n');
+}
+
+/** Writes one item of the default lifecycle: item.json plus the artifacts its state has reached. */
+function writeDefaultItem(root: string, seed: Seed): void {
+  const dir = path.join(root, 'docs', 'items', seed.key);
+  const reached = seed.stateIndex;
+  const rawState = ['spec', 'design', 'build', 'review', 'release', 'done'][reached] ?? 'spec';
+
+  const approvals: Record<string, string> = {};
+  // Everything past specification has its specification approved, so the only
+  // awaiting-input signal in the fixture is the one the role asks for.
+  if (reached >= 1 || seed.role !== 'awaiting') approvals['spec'] = 'approved';
+  if (seed.role === 'awaiting') delete approvals['spec'];
+  if (reached >= 4) approvals['release'] = 'approved';
+
+  const item: Record<string, unknown> = {
+    title: seed.title,
+    status: rawState,
+    assignee: 'engineer@example.invalid',
+    approvals,
+    updated: '2026-09-11T09:00:00.000Z',
+  };
+  // The review gate reads `reviewStatus`. Absent means not_evaluated, which is a
+  // third value and never renders as passed (FR-014).
+  if (reached >= 3 && seed.role !== 'unevaluated') item['reviewStatus'] = 'approved';
+
+  writeJson(path.join(dir, 'item.json'), item);
+
+  write(
+    path.join(dir, 'spec.md'),
+    markdown(seed.key, seed.title, 'Specification', [
+      '## Problem',
+      '',
+      'The current behaviour is wrong in a way a reader of this document can check.',
+      '',
+      '## Proposal',
+      '',
+      '- Change the observable behaviour described above.',
+      '- Leave everything else alone.',
+      '',
+      '## Out of scope',
+      '',
+      'Anything that would need a second review.',
+    ]),
+  );
+
+  if (reached >= 1) {
+    write(
+      path.join(dir, 'design.md'),
+      markdown(seed.key, seed.title, 'Design notes', [
+        '## Approach',
+        '',
+        'One change, at the layer that owns the behaviour.',
+        '',
+        '## Risks',
+        '',
+        '- The migration is not reversible without a backup.',
+      ]),
+    );
+  }
+
+  if (reached >= 2) {
+    write(
+      path.join(dir, 'impl.md'),
+      markdown(seed.key, seed.title, 'Implementation notes', [
+        'The change landed in one commit; the test above covers the failure mode.',
+      ]),
+    );
+    const outcome: 'passed' | 'failed' = seed.role === 'failed' ? 'failed' : 'passed';
+    writeJson(path.join(dir, 'tests.json'), testResults(seed.key, outcome));
+    writeJson(path.join(dir, 'checks.json'), {
+      checks: {
+        'unit-tests': {
+          status: outcome,
+          completed_at: '2026-09-11T08:40:00.000Z',
+          summary: outcome === 'failed' ? '1 of 5 failed' : '4 passed, 1 skipped',
+        },
+      },
+    });
+  }
+
+  if (reached >= 3) {
+    write(
+      path.join(dir, 'review.md'),
+      markdown(seed.key, seed.title, 'Review notes', [
+        seed.role === 'unevaluated'
+          ? 'No reviewer has recorded a decision yet. The gate is not evaluated, which is not the same as failed.'
+          : 'Reviewed. The failure path is covered and the naming matches the rest of the module.',
+      ]),
+    );
+  }
+
+  if (reached >= 4) {
+    write(
+      path.join(dir, 'release.md'),
+      markdown(seed.key, seed.title, 'Release notes', ['Shipped behind no flag; the change is small enough to revert.']),
+    );
+  }
+}
+
+/** Writes one item of the alternate lifecycle. */
+function writeAltItem(root: string, seed: Seed): void {
+  const dir = path.join(root, 'research', seed.key);
+  const reached = seed.stateIndex;
+  const rawState = ['intake', 'protocol', 'analysis', 'archived'][reached] ?? 'intake';
+
+  const signoffs: Record<string, string> = {};
+  if (reached >= 1 && seed.role !== 'awaiting') signoffs['ethics'] = 'granted';
+
+  const experiment: Record<string, unknown> = {
+    title: seed.title,
+    phase: rawState,
+    lead: 'engineer@example.invalid',
+    signoffs,
+    updated: '2026-09-11T09:00:00.000Z',
+  };
+  if (reached >= 2 && seed.role !== 'unevaluated') experiment['analysisStatus'] = 'complete';
+
+  writeJson(path.join(dir, 'experiment.json'), experiment);
+
+  write(
+    path.join(dir, 'hypothesis.md'),
+    markdown(seed.key, seed.title, 'Hypothesis', [
+      '## Question',
+      '',
+      'Stated so that a result could contradict it.',
+      '',
+      '## Measure',
+      '',
+      'One number, collected the same way every run.',
+    ]),
+  );
+
+  if (reached >= 1) {
+    write(
+      path.join(dir, 'protocol.md'),
+      markdown(seed.key, seed.title, 'Protocol', [
+        '1. Fix the seed.',
+        '2. Run the batch three times.',
+        '3. Record every run, including the ones that look wrong.',
+      ]),
+    );
+  }
+
+  if (reached >= 2) {
+    write(
+      path.join(dir, 'findings.md'),
+      markdown(seed.key, seed.title, 'Findings', [
+        seed.role === 'unevaluated'
+          ? 'Runs are complete; nobody has marked the analysis finished. Not evaluated, not failed.'
+          : 'The effect is present and survives the control condition.',
+      ]),
+    );
+    writeJson(path.join(dir, 'results.json'), testResults(seed.key, seed.role === 'failed' ? 'failed' : 'passed'));
+  }
+
+  if (seed.role === 'failed') {
+    writeJson(path.join(dir, 'anomalies.open.json'), {
+      opened: '2026-09-11T07:15:00.000Z',
+      reason: 'Run 2 diverged from runs 1 and 3 by more than the stated tolerance.',
+      status: 'open',
+    });
+  }
+}
+
+function repoReadme(kind: LifecycleKind, manifest: ManifestDoc, seeds: Seed[]): string {
+  const itemDir = kind === 'alt' ? 'research/' : 'docs/items/';
+  return [
+    `# ${manifest.name} fixture repository`,
+    '',
+    'Generated by `scripts/fixture.ts`. Everything here is local: the markdown and JSON files',
+    'below are the system of record, so the whole repository works with networking disabled.',
+    '',
+    '## Layout',
+    '',
+    '```',
+    `${itemDir}<KEY>/       one ${manifest.items.unit} — metadata JSON plus its declared artifacts`,
+    'sdlc/                  the co-located SDLC package, carrying sdlc.yaml',
+    '.sdlc-fixture/         generator bookkeeping and the provider fault control file',
+    '```',
+    '',
+    `## ${seeds.length} seeded ${manifest.items.unit}s`,
+    '',
+    '| Key | State | Role |',
+    '|---|---|---|',
+    ...seeds.map((seed) => `| ${seed.key} | ${manifest.states[seed.stateIndex]?.id ?? '?'} | ${seed.role} |`),
+    '',
+    'Register this directory from the repositories view. The dashboard never writes here',
+    '(FR-034), so `git status` stays clean for as long as you are only reading.',
+    '',
+  ].join('\n');
+}
+
+function pluginJson(manifest: ManifestDoc): string {
+  return `${JSON.stringify(
+    {
+      name: manifest.id,
+      version: manifest.version,
+      description: manifest.description,
+      author: { name: 'sdlc-manager fixtures' },
+    },
+    null,
+    2,
+  )}\n`;
+}
+
+function skillMarkdown(manifest: ManifestDoc): string {
+  const states = manifest.states;
+  return [
+    '---',
+    `name: ${manifest.id}-lifecycle`,
+    `description: How to move a ${manifest.items.unit} through the ${manifest.name}.`,
+    '---',
+    '',
+    `# ${manifest.name}`,
+    '',
+    `A ${manifest.items.unit} moves through ${states.length} stages, in order. Do not skip one.`,
+    '',
+    ...states.flatMap((state, index) => [
+      `## ${index + 1}. ${state.name}`,
+      '',
+      state.description ?? `The ${state.name.toLowerCase()} stage.`,
+      ...((state.artifacts ?? []).length > 0
+        ? [
+            '',
+            'Write, and keep current:',
+            ...(state.artifacts ?? []).map(
+              (artifact) =>
+                `- \`${artifact.path ?? artifact.id}\` — ${artifact.name ?? artifact.id}${artifact.required === true ? ' (required)' : ''}`,
+            ),
+          ]
+        : []),
+      ...((state.gates ?? []).length > 0
+        ? [
+            '',
+            'Do not leave this stage until:',
+            ...(state.gates ?? []).map((gate) => `- ${gate.name}${gate.awaits_human === true ? ' — a human has to say so' : ''}`),
+          ]
+        : []),
+      ...(state.terminal === true ? ['', 'This stage is terminal: work resting here is finished.'] : []),
+      '',
+    ]),
+    'This prose describes the lifecycle accurately, and the dashboard still must not read it.',
+    'A lifecycle is loaded from `sdlc.yaml` or it is not loaded at all (FR-041, Principle II).',
+    '',
+  ].join('\n');
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// §8  Generator state
+// ═══════════════════════════════════════════════════════════════════════════════
+
+interface FixtureState {
+  generator: 1;
+  kind: LifecycleKind;
+  prefix: string;
+  items: number;
+  version: string;
+  changes: Change[];
+  providers: string[];
+  createdAt: string;
+}
+
+function stateFilePath(root: string): string {
+  return path.join(root, '.sdlc-fixture', 'state.json');
+}
+
+function faultsFilePath(root: string): string {
+  return path.join(root, '.sdlc-fixture', 'faults.json');
+}
+
+function manifestPath(root: string): string {
+  return path.join(root, 'sdlc', 'sdlc.yaml');
+}
+
+function readFixtureState(root: string): FixtureState {
+  const file = stateFilePath(root);
+  if (!existsSync(file)) {
+    fail(`${path.resolve(root)} is not a generated fixture (${path.relative(process.cwd(), file)} is missing). Run \`fixture create\` first.`);
+  }
+  const raw = readJson(file);
+  if (!isPlainObject(raw)) fail(`${file} is not a JSON object`);
+  const kind = raw['kind'] === 'alt' ? 'alt' : 'default';
+  const changesRaw = Array.isArray(raw['changes']) ? raw['changes'] : [];
+  const changes: Change[] = [];
+  for (const entry of changesRaw) {
+    if (!isPlainObject(entry)) continue;
+    const op = entry['op'];
+    const state = entry['state'];
+    if ((op === 'remove' || op === 'add') && typeof state === 'string') changes.push({ op, state });
+  }
+  return {
+    generator: 1,
+    kind,
+    prefix: typeof raw['prefix'] === 'string' ? raw['prefix'] : 'DEMO',
+    items: typeof raw['items'] === 'number' ? raw['items'] : 0,
+    version: typeof raw['version'] === 'string' ? raw['version'] : lifecycleFor(kind).version,
+    changes,
+    providers: Array.isArray(raw['providers']) ? raw['providers'].filter((id): id is string => typeof id === 'string') : [],
+    createdAt: typeof raw['createdAt'] === 'string' ? raw['createdAt'] : new Date().toISOString(),
+  };
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// §9  Commands
+// ═══════════════════════════════════════════════════════════════════════════════
+
+interface Args {
+  positionals: string[];
+  flags: Record<string, string | boolean>;
+}
+
+function parseArgs(argv: string[]): Args {
+  const positionals: string[] = [];
+  const flags: Record<string, string | boolean> = {};
+  for (let index = 0; index < argv.length; index += 1) {
+    const token = argv[index];
+    if (token === undefined) continue;
+    if (!token.startsWith('--')) {
+      positionals.push(token);
+      continue;
+    }
+    const body = token.slice(2);
+    const equals = body.indexOf('=');
+    if (equals !== -1) {
+      flags[body.slice(0, equals)] = body.slice(equals + 1);
+      continue;
+    }
+    const next = argv[index + 1];
+    if (next !== undefined && !next.startsWith('--')) {
+      flags[body] = next;
+      index += 1;
+    } else {
+      flags[body] = true;
+    }
+  }
+  return { positionals, flags };
+}
+
+function stringFlag(args: Args, name: string): string | undefined {
+  const value = args.flags[name];
+  return typeof value === 'string' ? value : undefined;
+}
+
+function boolFlag(args: Args, name: string): boolean {
+  return args.flags[name] === true || args.flags[name] === 'true';
+}
+
+const USAGE = [
+  'Usage:',
+  '  node scripts/fixture.ts create  <dir> [--sdlc alt] [--items N] [--prefix ABC] [--force]',
+  '  node scripts/fixture.ts package <dir> [--omit-manifest] [--force]',
+  '  node scripts/fixture.ts fail    <providerId> <unreachable|unauthenticated|rate_limited> [--dir <path>] [--clear]',
+  '  node scripts/fixture.ts upgrade <dir> (--remove-state <id> | --add-state <id>)',
+  '',
+  'Through npm, pass arguments after `--`:',
+  '  npm run fixture:create -- ./tmp/demo --sdlc alt',
+].join('\n');
+
+function commandCreate(args: Args): void {
+  const target = args.positionals[0];
+  if (target === undefined) fail(`create needs a directory.\n\n${USAGE}`);
+
+  const sdlcFlag = stringFlag(args, 'sdlc');
+  if (sdlcFlag !== undefined && sdlcFlag !== 'alt' && sdlcFlag !== 'default') {
+    fail(`--sdlc must be 'default' or 'alt'; got '${sdlcFlag}'`);
+  }
+  const kind: LifecycleKind = sdlcFlag === 'alt' ? 'alt' : 'default';
+  const manifest = lifecycleFor(kind);
+  const prefix = (stringFlag(args, 'prefix') ?? (kind === 'alt' ? 'LAB' : 'DEMO')).toUpperCase();
+  if (!/^[A-Z]+$/.test(prefix)) {
+    fail(`--prefix must be letters only, so keys match the identity pattern [A-Z]+-[0-9]+; got '${prefix}'`);
+  }
+
+  const requested = stringFlag(args, 'items');
+  const curatedCount = curatedSeeds(kind, prefix).length;
+  let count = curatedCount;
+  if (requested !== undefined) {
+    const parsed = Number(requested);
+    if (!Number.isInteger(parsed) || parsed < 1) fail(`--items must be a positive integer; got '${requested}'`);
+    count = parsed;
+  }
+  const clamped = count < curatedCount;
+
+  const root = path.resolve(target);
+  prepareTarget(root, boolFlag(args, 'force'));
+
+  const seeds = seedItems(kind, prefix, count, manifest.states.length);
+  for (const seed of seeds) {
+    if (kind === 'alt') writeAltItem(root, seed);
+    else writeDefaultItem(root, seed);
+  }
+
+  write(manifestPath(root), emitManifest(manifest));
+  write(path.join(root, 'sdlc', '.claude-plugin', 'plugin.json'), pluginJson(manifest));
+  write(path.join(root, 'sdlc', 'skills', 'lifecycle', 'SKILL.md'), skillMarkdown(manifest));
+  write(path.join(root, 'README.md'), repoReadme(kind, manifest, seeds));
+  // Keeps V9's `git status` clean: the generator's bookkeeping is not part of the
+  // repository under observation.
+  write(path.join(root, '.gitignore'), ['.sdlc-fixture/', ''].join('\n'));
+
+  const fixtureState: FixtureState = {
+    generator: 1,
+    kind,
+    prefix,
+    items: seeds.length,
+    version: manifest.version,
+    changes: [],
+    providers: manifest.providers.map((provider) => provider.id),
+    createdAt: new Date().toISOString(),
+  };
+  writeJson(stateFilePath(root), fixtureState);
+  writeJson(faultsFilePath(root), { version: 1, faults: {} });
+
+  const relative = path.relative(process.cwd(), root) || '.';
+  const byRole = (role: SeedRole): string => seeds.filter((seed) => seed.role === role).map((seed) => seed.key).join(', ') || '(none)';
+  const nonTerminal = manifest.states.filter((state) => state.terminal !== true);
+  const removable = nonTerminal[Math.max(nonTerminal.length - 2, 0)]?.id ?? manifest.states[0]?.id ?? 'review';
+  const otherLifecycle =
+    kind === 'alt'
+      ? '       npm run fixture:create -- ./tmp/demo'
+      : '       npm run fixture:create -- ./tmp/demo2 --sdlc alt';
+
+  const lines = [
+    `Created ${relative}`,
+    '',
+    `  lifecycle       ${manifest.name} (${manifest.id} ${manifest.version}, contract sdlc: ${manifest.sdlc})`,
+    `  states          ${manifest.states.length} — ${manifest.states.map((state) => state.id).join(' → ')}`,
+    `  gate kinds      ${[...new Set(manifest.states.flatMap((state) => (state.gates ?? []).map((gate) => gate.kind)))].join(', ')}`,
+    `  providers       ${manifest.providers.map((provider) => `${provider.id} (${provider.kind})`).join(', ')}`,
+    `  ${manifest.items.unit}s${' '.repeat(Math.max(1, 15 - manifest.items.unit.length))}${seeds.length}`,
+    `  files written   ${filesWritten}`,
+    '',
+    '  attention markers',
+    `    awaiting human input   ${byRole('awaiting')}`,
+    `    failed gate            ${byRole('failed')}`,
+    `    gate never evaluated   ${byRole('unevaluated')}`,
+    '',
+    '  package         ' + path.join(relative, 'sdlc', 'sdlc.yaml'),
+    '  manifest        valid against contracts/sdlc-manifest.md §5',
+    '',
+    'Next:',
+    `  1. Run \`npm run dev\` and register ${relative} from the repositories view.`,
+    '  2. The other lifecycle, to prove no application change is needed (V2):',
+    otherLifecycle,
+    '  3. Scale, for SC-008 (200+ items across 3+ repositories):',
+    '       npm run fixture:create -- ./tmp/scale-a --items 70 --prefix ALPHA',
+    '  4. Degrade a provider (V7):',
+    `       npm run fixture:fail -- ${manifest.providers[manifest.providers.length - 1]?.id ?? 'repo'} unreachable --dir ${relative}`,
+    '  5. Upgrade the package mid-flight (V10, SC-013):',
+    `       npm run fixture:upgrade -- ${relative} --remove-state ${removable}`,
+    `       npm run fixture:upgrade -- ${relative} --add-state hardening`,
+  ];
+  if (clamped) {
+    lines.splice(
+      1,
+      0,
+      '',
+      `  note: --items ${count} was raised to ${seeds.length}; the curated roles (awaiting, failed, not-evaluated) are what the scenarios depend on.`,
+    );
+  }
+  process.stdout.write(`${lines.join('\n')}\n`);
+}
+
+function commandPackage(args: Args): void {
+  const target = args.positionals[0];
+  if (target === undefined) fail(`package needs a directory.\n\n${USAGE}`);
+  const omit = boolFlag(args, 'omit-manifest');
+
+  const root = path.resolve(target);
+  prepareTarget(root, boolFlag(args, 'force'));
+
+  const manifest = barePackageLifecycle();
+  write(path.join(root, '.claude-plugin', 'plugin.json'), pluginJson(manifest));
+  write(path.join(root, 'skills', 'lifecycle', 'SKILL.md'), skillMarkdown(manifest));
+  write(
+    path.join(root, 'README.md'),
+    [
+      `# ${manifest.name}`,
+      '',
+      omit
+        ? [
+            'An agent package that describes its lifecycle **only in prose**. It carries no',
+            '`sdlc.yaml`, so the dashboard must list it as unsupported and name the missing',
+            'manifest — not infer three stages from `skills/lifecycle/SKILL.md`, which describes',
+            'them perfectly well (FR-041, FR-045).',
+          ].join('\n')
+        : 'An agent package carrying a minimal but valid `sdlc.yaml`. The supported counterpart to `--omit-manifest`.',
+      '',
+    ].join('\n'),
+  );
+
+  if (!omit) write(path.join(root, 'sdlc.yaml'), emitManifest(manifest));
+  // The marker makes the directory re-creatable without --force; it is not an
+  // SDLC manifest and must not be mistaken for one.
+  writeJson(stateFilePath(root), {
+    generator: 1,
+    kind: 'default',
+    prefix: 'PKG',
+    items: 0,
+    version: manifest.version,
+    changes: [],
+    providers: manifest.providers.map((provider) => provider.id),
+    createdAt: new Date().toISOString(),
+  } satisfies FixtureState);
+
+  const relative = path.relative(process.cwd(), root) || '.';
+  process.stdout.write(
+    [
+      `Created agent package ${relative}`,
+      '',
+      `  sdlc.yaml       ${omit ? 'ABSENT (--omit-manifest)' : 'present and valid'}`,
+      `  skill prose     ${path.join(relative, 'skills', 'lifecycle', 'SKILL.md')} — describes ${manifest.states.length} stages and their gates`,
+      `  plugin manifest ${path.join(relative, '.claude-plugin', 'plugin.json')}`,
+      `  files written   ${filesWritten}`,
+      '',
+      omit
+        ? [
+            'Expect (V6, FR-045): the dashboard lists this package as unsupported, names',
+            'sdlc.yaml as the missing file, and refuses to associate it with a repository.',
+            'The skill prose is deliberately accurate — if a lifecycle appears anyway, the',
+            'dashboard inferred it from prose, which Principle II forbids.',
+          ].join('\n')
+        : 'Expect: the dashboard lists this package as supported, at version ' + manifest.version + '.',
+      '',
+    ].join('\n'),
+  );
+}
+
+const FAULT_MODES = ['unreachable', 'unauthenticated', 'rate_limited'] as const;
+
+function commandFail(args: Args): void {
+  const providerId = args.positionals[0];
+  const mode = args.positionals[1];
+  const clear = boolFlag(args, 'clear');
+  if (providerId === undefined) fail(`fail needs a provider id.\n\n${USAGE}`);
+  if (!clear && mode === undefined) fail(`fail needs a mode: ${FAULT_MODES.join(', ')}.\n\n${USAGE}`);
+  if (mode !== undefined && !(FAULT_MODES as readonly string[]).includes(mode)) {
+    fail(`'${mode}' is not a fault mode. Use one of: ${FAULT_MODES.join(', ')}`);
+  }
+
+  const root = path.resolve(stringFlag(args, 'dir') ?? './tmp/demo');
+  const file = faultsFilePath(root);
+
+  let faults: Record<string, unknown> = {};
+  if (existsSync(file)) {
+    const existing = readJson(file);
+    if (isPlainObject(existing) && isPlainObject(existing['faults'])) faults = { ...existing['faults'] };
+  }
+
+  if (clear) {
+    if (providerId === 'all') faults = {};
+    else delete faults[providerId];
+  } else if (mode !== undefined) {
+    faults[providerId] = { mode, since: new Date().toISOString() };
+  }
+
+  writeJson(file, { version: 1, faults });
+
+  const relative = path.relative(process.cwd(), root) || '.';
+  const notes: string[] = [];
+  if (!existsSync(manifestPath(root)) && !existsSync(path.join(root, 'sdlc.yaml'))) {
+    notes.push(`  note: ${relative} carries no sdlc.yaml. Pass --dir to point at a generated fixture.`);
+  } else if (existsSync(stateFilePath(root))) {
+    const declared = readFixtureState(root).providers;
+    if (declared.length > 0 && !declared.includes(providerId) && providerId !== 'all') {
+      notes.push(`  note: '${providerId}' is not a provider this fixture declares (${declared.join(', ')}).`);
+    }
+  }
+
+  process.stdout.write(
+    [
+      clear ? `Cleared fault for '${providerId}'` : `Provider '${providerId}' will now report ${String(mode)}`,
+      '',
+      `  control file    ${path.relative(process.cwd(), file)}`,
+      `  active faults   ${Object.keys(faults).length === 0 ? '(none)' : Object.keys(faults).join(', ')}`,
+      ...notes,
+      '',
+      'The fake provider reads this file on every reconcile, so no restart is needed.',
+      'Expect (V7, FR-037): items from healthy providers stay visible and correctly',
+      'stated; items from this one are marked stale with a retry, and the failure is',
+      'reported by name. Undo with:',
+      `  npm run fixture:fail -- ${providerId} --clear --dir ${relative}`,
+      '',
+    ].join('\n'),
+  );
+}
+
+function commandUpgrade(args: Args): void {
+  const target = args.positionals[0];
+  if (target === undefined) fail(`upgrade needs a directory.\n\n${USAGE}`);
+
+  const remove = stringFlag(args, 'remove-state');
+  const add = stringFlag(args, 'add-state');
+  if (remove === undefined && add === undefined) {
+    fail(`upgrade needs --remove-state <id> or --add-state <id>.\n\n${USAGE}`);
+  }
+  if (remove !== undefined && add !== undefined) {
+    fail('upgrade takes one of --remove-state or --add-state, not both. Run it twice to do both.');
+  }
+
+  const root = path.resolve(target);
+  const state = readFixtureState(root);
+  const change: Change = remove !== undefined ? { op: 'remove', state: remove } : { op: 'add', state: add ?? '' };
+
+  const manifest = lifecycleFor(state.kind);
+  // Replay every change from the pristine lifecycle, so an upgrade is a function of
+  // the recorded history rather than of whatever the file happens to say now.
+  applyChanges(manifest, state.changes);
+  const previousVersion = manifest.version;
+  applyChanges(manifest, [change]);
+
+  write(manifestPath(root), emitManifest(manifest));
+  const updated: FixtureState = { ...state, version: manifest.version, changes: [...state.changes, change] };
+  writeJson(stateFilePath(root), updated);
+
+  const relative = path.relative(process.cwd(), root) || '.';
+  const expectation =
+    change.op === 'remove'
+      ? [
+          `Expect (V10, FR-046): ${manifest.items.unit}s recorded as being in '${change.state}' are marked`,
+          "**unmapped**, retaining their raw value. They are neither dropped from the list",
+          'nor reassigned to an adjacent state. Their files on disk were not touched.',
+        ]
+      : [
+          `Expect (SC-013): '${change.state}' appears in the interface on next load, in lifecycle`,
+          'order and with no items in it yet — with no change to the application.',
+        ];
+
+  process.stdout.write(
+    [
+      `Upgraded ${path.join(relative, 'sdlc', 'sdlc.yaml')}`,
+      '',
+      `  change          ${change.op === 'remove' ? 'removed' : 'added'} state '${change.state}'`,
+      `  version         ${previousVersion} → ${manifest.version}`,
+      `  states          ${manifest.states.length} — ${manifest.states.map((s) => s.id).join(' → ')}`,
+      `  transitions     ${manifest.transitions.length}`,
+      `  repo_config     ${manifest.repo_config.length} field(s)`,
+      '',
+      ...expectation,
+      '',
+    ].join('\n'),
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// §10  Entry point
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function main(argv: string[]): void {
+  const command = argv[0];
+  const args = parseArgs(argv.slice(1));
+
+  switch (command) {
+    case 'create':
+      commandCreate(args);
+      return;
+    case 'package':
+      commandPackage(args);
+      return;
+    case 'fail':
+      commandFail(args);
+      return;
+    case 'upgrade':
+      commandUpgrade(args);
+      return;
+    case undefined:
+    case '--help':
+    case '-h':
+    case 'help':
+      process.stdout.write(`${USAGE}\n`);
+      return;
+    default:
+      fail(`unknown command '${command}'.\n\n${USAGE}`);
+  }
+}
+
+main(process.argv.slice(2));

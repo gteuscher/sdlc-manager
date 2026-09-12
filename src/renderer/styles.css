@@ -1,0 +1,563 @@
+/*
+ * Project-owned styles.
+ *
+ * The constitution requires headless, accessibility-complete primitives paired
+ * with styles this project owns, and forbids adopting a framework that ships its
+ * own design system (Principle XII would not survive it). So this file is the
+ * whole visual layer: a few hundred lines of plain CSS, no preprocessor, no
+ * runtime, nothing to tree-shake.
+ *
+ * Two rules govern what is written here:
+ *
+ *   Colour is never the only signal (Principle XI). Every state that colour
+ *   distinguishes — the two attention kinds, stale, unmapped, disagreement — also
+ *   differs in text, and the attention kinds additionally differ in shape. Read
+ *   in greyscale, nothing here becomes ambiguous.
+ *
+ *   Focus is always visible. `:focus-visible` is styled on every interactive
+ *   element rather than suppressed, because keyboard operability is a
+ *   correctness property, not polish.
+ */
+
+:root {
+  color-scheme: light dark;
+
+  --bg: #f7f7f8;
+  --bg-raised: #ffffff;
+  --bg-sunken: #eeeef1;
+  --border: #d5d5dc;
+  --border-strong: #b4b4bf;
+  --text: #1a1a1f;
+  --text-dim: #5a5a66;
+  --accent: #2b5fd9;
+  --accent-text: #ffffff;
+
+  --attention-input: #8a5a00;
+  --attention-input-bg: #fff4dc;
+  --attention-gate: #a01c2b;
+  --attention-gate-bg: #ffe7e9;
+  --stale: #6b4e00;
+  --stale-bg: #fbf3d6;
+  --unmapped: #5b3fa8;
+  --unmapped-bg: #efeaff;
+
+  --radius: 6px;
+  --gap: 12px;
+  --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --mono: ui-monospace, SFMono-Regular, "Cascadia Mono", Consolas, "Liberation Mono", monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #16161a;
+    --bg-raised: #1e1e24;
+    --bg-sunken: #101014;
+    --border: #33333d;
+    --border-strong: #4a4a57;
+    --text: #f0f0f4;
+    --text-dim: #a6a6b4;
+    --accent: #7fa3ff;
+    --accent-text: #10131c;
+
+    --attention-input: #ffd28a;
+    --attention-input-bg: #3a2c0d;
+    --attention-gate: #ffb0b8;
+    --attention-gate-bg: #401319;
+    --stale: #f0d98a;
+    --stale-bg: #332a0d;
+    --unmapped: #cfc0ff;
+    --unmapped-bg: #2a2140;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.boot {
+  margin: 0;
+  padding: 24px;
+  color: var(--text-dim);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* ── Shell ────────────────────────────────────────────────────────────────── */
+
+.app {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+}
+
+.app__bar {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding: 10px 20px;
+  background: var(--bg-raised);
+  border-bottom: 1px solid var(--border);
+}
+
+.app__brand {
+  margin: 0;
+  font-weight: 650;
+  letter-spacing: 0.01em;
+}
+
+.app__nav {
+  display: flex;
+  gap: 4px;
+}
+
+.app__nav-link {
+  padding: 5px 10px;
+  border-radius: var(--radius);
+  color: var(--text-dim);
+  text-decoration: none;
+}
+
+.app__nav-link:hover {
+  background: var(--bg-sunken);
+  color: var(--text);
+}
+
+.app__nav-link[aria-current="page"] {
+  background: var(--bg-sunken);
+  color: var(--text);
+  font-weight: 600;
+}
+
+.app__main {
+  flex: 1 1 auto;
+  padding: 20px;
+}
+
+/* ── Shared bits ──────────────────────────────────────────────────────────── */
+
+a:focus-visible,
+button:focus-visible,
+select:focus-visible,
+input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+  color: var(--text);
+  font: inherit;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.button:hover:not(:disabled) {
+  background: var(--bg-sunken);
+}
+
+.button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.button--primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-text);
+  font-weight: 600;
+}
+
+.button--quiet {
+  border-color: transparent;
+  background: transparent;
+  color: var(--text-dim);
+}
+
+.button--small {
+  padding: 2px 8px;
+  font-size: 12px;
+}
+
+.pending {
+  margin: 24px 0;
+  color: var(--text-dim);
+}
+
+.empty,
+.failure {
+  max-width: 60ch;
+  margin: 24px auto;
+  padding: 24px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+}
+
+.failure {
+  border-color: var(--attention-gate);
+}
+
+.empty__title,
+.failure__title {
+  margin: 0 0 8px;
+  font-size: 18px;
+}
+
+.empty__body,
+.failure__message {
+  margin: 0 0 8px;
+}
+
+.empty__hint {
+  margin: 0 0 16px;
+  color: var(--text-dim);
+}
+
+/* ── Items route ──────────────────────────────────────────────────────────── */
+
+.items {
+  max-width: 1100px;
+  margin: 0 auto;
+}
+
+.items__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--gap);
+  margin-bottom: var(--gap);
+}
+
+.items__heading {
+  margin: 0;
+  font-size: 20px;
+}
+
+.attention-count {
+  margin: 0;
+  padding: 3px 10px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--bg-raised);
+}
+
+.attention-count__number {
+  font-weight: 700;
+}
+
+.attention-count--clear {
+  color: var(--text-dim);
+}
+
+/* ── Filters ──────────────────────────────────────────────────────────────── */
+
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap);
+  padding: 12px;
+  margin-bottom: var(--gap);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+}
+
+.filters__field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 150px;
+}
+
+.filters__field--wide {
+  flex: 1 1 220px;
+}
+
+.filters__field--action {
+  justify-content: flex-end;
+  min-width: 0;
+}
+
+.filters__label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-dim);
+}
+
+.filters__control {
+  padding: 5px 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+}
+
+/* ── Rows ─────────────────────────────────────────────────────────────────── */
+
+.items__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.row {
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+}
+
+.row--unmapped {
+  border-left-color: var(--unmapped);
+}
+
+.row__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--gap);
+  justify-content: space-between;
+}
+
+.row__link {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  color: inherit;
+  text-decoration: none;
+  border-radius: var(--radius);
+}
+
+.row__link:hover .row__title {
+  text-decoration: underline;
+}
+
+.row__key {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.row__title {
+  font-weight: 600;
+}
+
+.row__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 20px;
+  margin: 8px 0 0;
+}
+
+.row__fact {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.row__fact-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-dim);
+}
+
+.row__fact-value {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.row__raw {
+  font-family: var(--mono);
+  font-size: 12px;
+  padding: 0 4px;
+  border-radius: 3px;
+  background: var(--bg-sunken);
+}
+
+.row__note {
+  margin: 8px 0 0;
+  padding: 6px 8px;
+  border-radius: var(--radius);
+  background: var(--bg-sunken);
+  color: var(--text-dim);
+}
+
+.row__note--disagreement,
+.row__note--stale {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+
+.row__retry-problem {
+  flex-basis: 100%;
+  color: var(--attention-gate);
+}
+
+/* ── Tags and badges ──────────────────────────────────────────────────────── */
+
+.tag {
+  display: inline-block;
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.tag--unmapped {
+  color: var(--unmapped);
+  background: var(--unmapped-bg);
+}
+
+.tag--stale {
+  color: var(--stale);
+  background: var(--stale-bg);
+}
+
+.tag--disagreement {
+  color: var(--text-dim);
+  background: var(--bg);
+}
+
+.attention {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.attention__reason {
+  color: var(--text-dim);
+}
+
+/*
+ * The two attention kinds. They differ in wording first, in the drawn mark
+ * second, and in colour third — the border radius differs too, so the outline
+ * shape is not identical even before the mark is read (FR-006, Principle XI).
+ */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 10px;
+  border: 1.5px solid currentColor;
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.badge--input {
+  border-radius: 999px;
+  color: var(--attention-input);
+  background: var(--attention-input-bg);
+}
+
+.badge--gate {
+  border-radius: 3px;
+  color: var(--attention-gate);
+  background: var(--attention-gate-bg);
+}
+
+.badge__mark {
+  flex: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+/* ── A view that failed to render ──────────────────────────────────────────────
+   Deliberately looks like a considered state rather than a crash: the engineer
+   can still see the navigation above it and act (Principle X). */
+
+.route-error {
+  max-width: 46rem;
+  margin: 3rem auto;
+  padding: 1.5rem 1.75rem;
+  border: 1px solid var(--edge-strong, #4a4a52);
+  border-left: 3px solid var(--failed, #d9737f);
+  border-radius: 8px;
+  background: var(--sunken, #1c1c21);
+}
+
+.route-error__title {
+  margin: 0 0 0.5rem;
+  font-size: 1.125rem;
+  font-weight: 600;
+}
+
+.route-error__lead {
+  margin: 0 0 0.75rem;
+  color: var(--ink, inherit);
+}
+
+.route-error__detail {
+  margin: 0 0 1rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 6px;
+  background: var(--ground, #141418);
+  color: var(--ink-quiet, #a9a9b3);
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 0.8125rem;
+  overflow-wrap: anywhere;
+}
+
+.route-error__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 0 0 0.75rem;
+}
+
+.route-error__hint {
+  margin: 0;
+  color: var(--ink-quiet, #a9a9b3);
+  font-size: 0.875rem;
+}

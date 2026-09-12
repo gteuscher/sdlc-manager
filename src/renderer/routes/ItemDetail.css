@@ -1,0 +1,936 @@
+/*
+ * The item detail route's own styles.
+ *
+ * A separate stylesheet rather than more of `styles.css`, for the same reason
+ * the route's JavaScript is a separate chunk: it is imported from
+ * `ItemDetail.tsx`, so the bundler emits it beside that chunk and the item list
+ * never pays for it (Principle XII). It inherits every token, `.button`,
+ * `.tag`, `.pending`, and `.sr-only` from `styles.css`, and defines only what
+ * this route adds.
+ *
+ * The rule that governs everything below is `styles.css`'s: colour is never the
+ * only signal (Principle XI). The four state markers and the three gate statuses
+ * each differ in wording and in drawn shape before colour is applied at all, so
+ * read in greyscale nothing here becomes ambiguous. Focus is always visible.
+ */
+
+.detail {
+  max-width: 1100px;
+  margin: 0 auto;
+}
+
+.detail__back {
+  margin: 0 0 12px;
+}
+
+.detail__back a {
+  color: var(--text-dim);
+  text-decoration: none;
+  border-radius: var(--radius);
+}
+
+.detail__back a:hover {
+  color: var(--text);
+  text-decoration: underline;
+}
+
+.detail__head {
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+}
+
+.detail--unmapped .detail__head {
+  border-left: 3px solid var(--unmapped);
+}
+
+.detail__key {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.detail__title {
+  margin: 2px 0 0;
+  font-size: 20px;
+}
+
+.detail__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 20px;
+  margin: 10px 0 0;
+}
+
+.detail__fact {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.detail__fact-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-dim);
+}
+
+.detail__fact-value {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.detail__raw {
+  font-family: var(--mono);
+  font-size: 12px;
+  padding: 0 4px;
+  border-radius: 3px;
+  background: var(--bg-sunken);
+}
+
+.detail__attention {
+  margin: 10px 0 0;
+}
+
+.detail__note {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 10px 0 0;
+  padding: 8px 10px;
+  border-radius: var(--radius);
+  background: var(--bg-sunken);
+  color: var(--text-dim);
+}
+
+.detail__note--unmapped {
+  display: block;
+  margin: 12px 0 0;
+  border: 1px solid var(--unmapped);
+  background: var(--unmapped-bg);
+  color: var(--text);
+}
+
+.tag--unmapped,
+.tag--stale {
+  flex: none;
+}
+
+.tag--terminal,
+.tag--required,
+.tag--blocking,
+.tag--advisory,
+.tag--missing {
+  flex: none;
+  color: var(--text-dim);
+  background: var(--bg);
+}
+
+.tag--blocking {
+  color: var(--attention-gate);
+  background: var(--attention-gate-bg);
+}
+
+.tag--missing {
+  color: var(--attention-gate);
+  background: var(--attention-gate-bg);
+}
+
+/* ── State markers ────────────────────────────────────────────────────────── */
+
+.state-marker {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: none;
+}
+
+.state-marker__mark {
+  flex: none;
+}
+
+.state-marker__label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.state-marker--completed {
+  color: #1f6b3a;
+}
+
+.state-marker--current {
+  color: var(--accent);
+}
+
+.state-marker--blocked {
+  color: var(--attention-gate);
+}
+
+.state-marker--not_reached {
+  color: var(--text-dim);
+}
+
+@media (prefers-color-scheme: dark) {
+  .state-marker--completed {
+    color: #6fd08c;
+  }
+}
+
+/* ── Tabs ─────────────────────────────────────────────────────────────────── */
+
+.tabs {
+  margin-top: var(--gap);
+}
+
+.tabs__list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+}
+
+.tabs__trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 12px;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  background: transparent;
+  color: var(--text-dim);
+  font: inherit;
+  cursor: pointer;
+}
+
+.tabs__trigger:hover {
+  background: var(--bg-sunken);
+  color: var(--text);
+}
+
+.tabs__trigger:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* The selected tab differs by weight, border, and ground — not by colour alone. */
+.tabs__trigger[data-state="active"] {
+  border-color: var(--border-strong);
+  background: var(--bg-sunken);
+  color: var(--text);
+  font-weight: 650;
+}
+
+.tabs__name {
+  white-space: nowrap;
+}
+
+.tabs__panel {
+  margin-top: var(--gap);
+}
+
+.tabs__panel:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ── One state's panel ────────────────────────────────────────────────────── */
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap);
+}
+
+.panel__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--gap);
+}
+
+.panel__title {
+  margin: 0;
+  font-size: 18px;
+}
+
+.panel__description,
+.panel__attention {
+  margin: 0;
+  color: var(--text-dim);
+}
+
+.panel__section {
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+}
+
+.panel__section-title {
+  margin: 0 0 10px;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-dim);
+}
+
+.panel__none,
+.gates__none {
+  margin: 0;
+  color: var(--text-dim);
+}
+
+.panel__unreached p {
+  margin: 0 0 8px;
+  color: var(--text-dim);
+}
+
+.panel__declared {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.panel__declared li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.panel__declared-name {
+  font-weight: 600;
+}
+
+.panel__declared-kind,
+.panel__declared-source {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.panel__artifacts {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap);
+}
+
+/* ── Where to act (the read-only affordance) ──────────────────────────────── */
+
+.actions {
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+}
+
+.actions__heading {
+  margin: 0 0 8px;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-dim);
+}
+
+.actions__clear {
+  margin: 0;
+  color: var(--text-dim);
+}
+
+.actions__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.actions__item {
+  padding: 8px 10px;
+  border-radius: var(--radius);
+  background: var(--bg-sunken);
+}
+
+.actions__what {
+  font-weight: 600;
+}
+
+.actions__where {
+  color: var(--text-dim);
+}
+
+.actions__posture {
+  margin: 10px 0 0;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+/* ── Gates ────────────────────────────────────────────────────────────────── */
+
+.gates {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.gate {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+}
+
+.gate--failed {
+  border-left-color: var(--attention-gate);
+}
+
+.gate--not_evaluated {
+  border-left-color: var(--border-strong);
+  border-left-style: dashed;
+}
+
+.gate__head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+}
+
+.gate__status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+}
+
+.gate__status-label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.gate__status--passed {
+  color: #1f6b3a;
+}
+
+.gate__status--failed {
+  color: var(--attention-gate);
+}
+
+.gate__status--not_evaluated {
+  color: var(--text-dim);
+}
+
+@media (prefers-color-scheme: dark) {
+  .gate__status--passed {
+    color: #6fd08c;
+  }
+}
+
+.gate__mark {
+  flex: none;
+}
+
+.gate__name {
+  font-weight: 600;
+}
+
+.gate__kind {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.gate__detail {
+  margin: 6px 0 0;
+}
+
+.gate__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 18px;
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.gate__locator {
+  font-family: var(--mono);
+  padding: 0 4px;
+  border-radius: 3px;
+  background: var(--bg-sunken);
+}
+
+/* ── Artifacts ────────────────────────────────────────────────────────────── */
+
+.artifact {
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg);
+}
+
+.artifact--failed {
+  border-color: var(--attention-gate);
+}
+
+.artifact__head {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.artifact__name {
+  margin: 0;
+  font-size: 15px;
+}
+
+.artifact__provenance {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 18px;
+  margin: 0;
+  font-size: 12px;
+}
+
+.artifact__fact {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.artifact__fact-label {
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-dim);
+}
+
+.artifact__locator {
+  font-family: var(--mono);
+  padding: 0 4px;
+  border-radius: 3px;
+  background: var(--bg-sunken);
+}
+
+.artifact__problem {
+  margin: 8px 0 0;
+  font-weight: 600;
+  color: var(--attention-gate);
+}
+
+.artifact__hint,
+.artifact__note,
+.artifact__size {
+  margin: 6px 0 0;
+  color: var(--text-dim);
+}
+
+.artifact__disclosure {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin: 10px 0 0;
+}
+
+.artifact__body {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+/* ── Rendered markdown ────────────────────────────────────────────────────── */
+
+.markdown {
+  overflow-wrap: anywhere;
+}
+
+.markdown--empty {
+  margin: 0;
+  color: var(--text-dim);
+}
+
+.markdown > :first-child {
+  margin-top: 0;
+}
+
+.markdown > :last-child {
+  margin-bottom: 0;
+}
+
+.markdown h1,
+.markdown h2,
+.markdown h3,
+.markdown h4 {
+  margin: 16px 0 8px;
+  line-height: 1.3;
+}
+
+.markdown h1 {
+  font-size: 18px;
+}
+
+.markdown h2 {
+  font-size: 16px;
+}
+
+.markdown h3,
+.markdown h4 {
+  font-size: 14px;
+}
+
+.markdown p,
+.markdown ul,
+.markdown ol,
+.markdown blockquote {
+  margin: 0 0 10px;
+}
+
+.markdown code {
+  font-family: var(--mono);
+  font-size: 12px;
+  padding: 0 4px;
+  border-radius: 3px;
+  background: var(--bg-sunken);
+}
+
+.markdown pre {
+  margin: 0 0 10px;
+  padding: 10px;
+  overflow-x: auto;
+  border-radius: var(--radius);
+  background: var(--bg-sunken);
+}
+
+.markdown pre code {
+  padding: 0;
+  background: none;
+}
+
+.markdown blockquote {
+  padding-left: 10px;
+  border-left: 3px solid var(--border-strong);
+  color: var(--text-dim);
+}
+
+.markdown table {
+  border-collapse: collapse;
+  margin: 0 0 10px;
+}
+
+.markdown th,
+.markdown td {
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  text-align: left;
+}
+
+.markdown img {
+  max-width: 100%;
+}
+
+/* ── Test results ─────────────────────────────────────────────────────────── */
+
+.run__outcome {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+}
+
+.run__outcome-label {
+  font-weight: 700;
+}
+
+.run--passed .run__outcome {
+  color: #1f6b3a;
+}
+
+.run--failed .run__outcome {
+  color: var(--attention-gate);
+}
+
+.run--unknown .run__outcome {
+  color: var(--text-dim);
+}
+
+@media (prefers-color-scheme: dark) {
+  .run--passed .run__outcome {
+    color: #6fd08c;
+  }
+}
+
+.run__counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 18px;
+  margin: 8px 0 0;
+  color: var(--text-dim);
+}
+
+.run__count-number {
+  font-weight: 700;
+  color: var(--text);
+}
+
+.run__note,
+.run__hint {
+  margin: 8px 0 0;
+  color: var(--text-dim);
+}
+
+.run__problem {
+  margin: 0;
+  font-weight: 600;
+  color: var(--attention-gate);
+}
+
+.run__cases {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 22em;
+  overflow-y: auto;
+}
+
+.run__case {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  padding: 3px 6px;
+  border-radius: 3px;
+  background: var(--bg-sunken);
+}
+
+.run__case-status {
+  font-family: var(--mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-dim);
+}
+
+.run__case-detail {
+  flex-basis: 100%;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.run__raw,
+.tracked__body {
+  margin: 8px 0 0;
+  padding: 10px;
+  max-height: 26em;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: var(--mono);
+  font-size: 12px;
+  border-radius: var(--radius);
+  background: var(--bg-sunken);
+}
+
+/* ── Issue-tracker content ────────────────────────────────────────────────── */
+
+.tracked__attribution,
+.tracked--empty {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+/* ── Advisory console (T114, T116) ────────────────────────────────────────── */
+
+/*
+ * The console is docked at the foot of every state panel, so it is styled to sit
+ * *inside* a state rather than to compete with it: the same sunken ground as the
+ * other read-only surfaces, no accent border, and a heading no louder than the
+ * gates above it.
+ *
+ * `.console__problem--reported` is the shipped-unconfigured case, which is the
+ * ordinary first run rather than a fault. It is deliberately not styled as an
+ * error — no red, no alert colouring — because an engineer who has configured
+ * nothing has done nothing wrong. It is still bordered and titled, so it reads as
+ * a deliberate panel rather than an empty area (Principle X). The genuine
+ * failures next to it use the same colour the gate failures use, so the two
+ * classes of thing stay distinguishable without reading the words — and the words
+ * differ too, which is the cue that survives greyscale.
+ */
+
+.console {
+  display: block;
+}
+
+.console__posture {
+  margin: 0 0 10px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.console__transcript {
+  padding: 10px;
+  max-height: 26em;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-sunken);
+}
+
+.console__empty {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.console__messages {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.console__message {
+  padding: 8px 10px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--bg-raised);
+}
+
+/* The engineer's own questions are set apart from the answers by indent and by
+   ground, never by colour alone — the speaker is always named in words too. */
+.console__message--user {
+  margin-left: 1.5em;
+  background: var(--bg);
+}
+
+.console__speaker {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 8px;
+  margin: 0 0 4px;
+}
+
+.console__who {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-dim);
+}
+
+.console__at {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+
+.console__content {
+  margin: 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.console__problem {
+  margin: 10px 0 0;
+  padding: 10px;
+  border: 1px solid var(--border-strong);
+  border-left-width: 3px;
+  border-radius: var(--radius);
+  background: var(--bg-sunken);
+}
+
+.console__problem--failed {
+  border-color: var(--attention-gate);
+  background: var(--attention-gate-bg);
+}
+
+.console__problem-title {
+  margin: 0;
+  font-weight: 600;
+}
+
+.console__problem-message {
+  margin: 4px 0 0;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.console__problem-retry {
+  margin: 8px 0 0;
+}
+
+/* Where the assistant is configured, in place of the input that would not work. */
+.console__where {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.console__provider {
+  font-family: var(--mono);
+  font-size: 11px;
+  padding: 0 4px;
+  border-radius: 3px;
+  background: var(--bg-sunken);
+}
+
+.console__composer {
+  margin: 12px 0 0;
+}
+
+.console__label {
+  display: block;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-dim);
+}
+
+.console__input {
+  display: block;
+  width: 100%;
+  margin: 4px 0 0;
+  padding: 8px 10px;
+  font-family: inherit;
+  font-size: inherit;
+  color: var(--text);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+  resize: vertical;
+}
+
+.console__input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.console__send {
+  display: flex;
+  justify-content: flex-end;
+  margin: 8px 0 0;
+}

@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>SDLC Manager</title>
+    <!--
+      Relative hrefs throughout. The packaged renderer is loaded from a file://
+      URL (vite.config.ts sets `base: './'` for the same reason), where a
+      root-absolute path does not resolve.
+
+      The stylesheet is linked here rather than imported from main.tsx so that
+      the page has its styles before the bundle parses, and so that size-limit
+      can measure `assets/*.css` as the initial CSS budget of Principle XII.
+
+      No CSP <meta> here on purpose: the main process sets the policy on the
+      session (src/main/window.ts, CONTENT_SECURITY_POLICY), which is the copy
+      that a unit test asserts and that the dev server cannot quietly diverge
+      from.
+    -->
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <!--
+      The fallback paragraph is Principle X applied to the one moment React
+      cannot cover: between the document painting and the bundle mounting. React
+      replaces it on first render. A blank frame is never the answer, not even
+      for 40ms.
+    -->
+    <div id="root"><p class="boot">Starting the dashboard&hellip;</p></div>
+    <script type="module" src="./main.tsx"></script>
+  </body>
+</html>
