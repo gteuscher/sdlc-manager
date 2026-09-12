@@ -70,7 +70,20 @@ import './ItemDetail.css';
 /** T090. The lazy boundary. Nothing else in the renderer imports this module. */
 const MarkdownArtifact = lazy(() => import('../components/MarkdownArtifact'));
 
-const PARAM_STATE = 'state';
+/**
+ * The tab is `?tab=`, not `?state=`, and the distinction is load-bearing rather
+ * than cosmetic (003 research.md §2). `Items.tsx` reads `?state=` as the list
+ * *filter*. While these were two sibling routes they never shared a query string
+ * and the collision was invisible; as two panes of one view they read and write
+ * the same URL, so on one key filtering the list would move this tab and changing
+ * this tab would filter the list. Both behaviours are required — 003's FR-013 and
+ * 001's FR-015 — so neither can give way, and the collision is resolved by naming.
+ *
+ * This parameter is the one renamed because `state` is the lifecycle's own word
+ * and reads correctly for a filter over states, and because the list pane is the
+ * persistent one whose URL is more likely to be shared.
+ */
+const PARAM_TAB = 'tab';
 const ITEMS_ROUTE = '/';
 
 /** Provider timestamps are validated as strings, not as dates. An unparseable one shows as recorded. */
@@ -217,7 +230,7 @@ export default function ItemDetail(): ReactElement {
   const onStateChange = useCallback(
     (stateId: string) => {
       const next = new URLSearchParams(search);
-      next.set(PARAM_STATE, stateId);
+      next.set(PARAM_TAB, stateId);
       // Replace rather than push: clicking through a six-state lifecycle must
       // not put six entries between the engineer and the item list.
       setSearch(next, { replace: true });
@@ -289,6 +302,27 @@ export default function ItemDetail(): ReactElement {
   }
 
   if (!item.data.ok) {
+    // T038, FR-018. An item that is *gone* is not an item that failed to load,
+    // and the two want different affordances: a retry is the right offer when a
+    // provider might answer next time, and an empty offer when the thing asked
+    // for is not there any more. Reaching a deleted item through an old link or
+    // a stale window is ordinary, so it gets the treatment this application
+    // already uses for a deliberate nothing with a way onward, rather than an
+    // error styled like a fault.
+    if (item.data.reason === 'not_found') {
+      return (
+        <section className="detail">
+          {back}
+          <EmptyState
+            title={`${itemKey} is no longer there`}
+            body={item.data.message}
+            hint="An item disappears from here when its system of record no longer reports it — most often because it was closed, deleted, or moved somewhere this repository does not read. Nothing has been lost on this side; there is simply nothing left to show."
+            action={{ label: 'Back to the work item list', to: ITEMS_ROUTE }}
+          />
+        </section>
+      );
+    }
+
     return (
       <section className="detail">
         {back}
@@ -321,7 +355,7 @@ export default function ItemDetail(): ReactElement {
 
   const unmapped = isUnmapped(summary.stateId);
   const recorded = summary.rawState === '' ? '(no value recorded)' : summary.rawState;
-  const selected = selectedStateId(detail, search.get(PARAM_STATE));
+  const selected = selectedStateId(detail, search.get(PARAM_TAB));
 
   return (
     <section className={unmapped ? 'detail detail--unmapped' : 'detail'} aria-labelledby={headingId}>

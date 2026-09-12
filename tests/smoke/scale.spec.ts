@@ -17,6 +17,26 @@
  * cursor, that the count is present and correct, and that reaching the point of
  * being *able* to look does not itself take longer than the budget. The human
  * half is recorded as an observation in T120, which is the honest division.
+ *
+ * ── T043: the same measurement, with both panes rendered ────────────────────
+ *
+ * 003 turned the list into one pane of a two-pane workbench, and SC-005 restates
+ * SC-008's load for that arrangement: 200+ items **with a detail open beside
+ * them**, not the list alone. research.md §8 predicted no change — the rail
+ * renders the same rows, and the new cost is one item's detail — and recorded
+ * that this is worth re-measuring rather than assuming, because the prediction is
+ * about a narrower column, a lazily-loaded chunk, and a second subtree of live
+ * queries, none of which the list-only figure covers.
+ *
+ * So the budget is now measured twice: once as it always was, and once after an
+ * item has been selected. The original tests are untouched — the list-alone
+ * figure is still the baseline the two-pane figure is meaningful against, and
+ * losing it would leave a regression with nothing to be a regression from.
+ *
+ * The two-pane measurement is a *reachability* budget, not a render benchmark.
+ * What it asserts is that with the detail open, the attention state is still on
+ * screen and still agrees with the list inside `ATTENTION_BUDGET_MS`. It cannot
+ * claim the engineer reads it in ten seconds; that stays a human observation.
  */
 
 import { execFileSync } from 'node:child_process';
@@ -175,4 +195,52 @@ test('items from all three repositories appear in the one list (FR-001)', async 
   for (const repository of REPOSITORIES) {
     expect(listText, `no items from ${repository.dir}`).toContain(repository.prefix);
   }
+});
+
+// ── T043 — the same load, with both panes rendered (SC-005) ─────────────────
+// Deliberately last in the file: it is the only test here that changes what the
+// application is showing, and every measurement above is of the list alone.
+
+test('what needs me is still reachable within the budget with a detail open (SC-005)', async () => {
+  const window = await app.firstWindow();
+
+  // The two-pane arrangement is the subject. A narrow window shows one pane, and
+  // the measurement would silently be the list-alone one again.
+  await expect(window.locator('.workbench')).toHaveAttribute('data-narrow', 'false');
+
+  const rows = window.locator('.items__list > li');
+  await expect.poll(async () => rows.count(), { timeout: ATTENTION_BUDGET_MS * 3 }).toBeGreaterThanOrEqual(200);
+  const before = await rows.count();
+
+  // Open a detail beside the list. The first selection is the expensive one: it
+  // is where the lazily-loaded detail chunk is fetched, so it is the selection
+  // worth measuring after.
+  const target = rows.first();
+  const key = (await target.locator('.row__key').innerText()).trim();
+  await target.locator('.row__link').click();
+
+  const detail = window.getByRole('main', { name: 'Item detail' });
+  await expect(detail.locator('.detail__key')).toHaveText(key, { timeout: ATTENTION_BUDGET_MS * 3 });
+
+  // FR-004 as a precondition of the measurement rather than as its subject: a
+  // budget met by a workbench that had dropped half its rows would be worthless.
+  expect(await rows.count(), 'opening a detail changed how many rows the list holds').toBe(before);
+
+  const started = Date.now();
+
+  // The same question SC-001 asks, asked again with the detail rendered: what is
+  // waiting on me, without opening anything further.
+  const count = window.locator('.attention-count');
+  await expect(count.first()).toBeVisible({ timeout: ATTENTION_BUDGET_MS });
+  const countText = await count.first().innerText();
+  const marked = await rows.locator('.attention').count();
+  expect(countText, 'the count and the marked rows disagree with a detail open').toContain(
+    String(marked),
+  );
+
+  const elapsed = Date.now() - started;
+  expect(
+    elapsed,
+    `attention state took ${elapsed}ms to become readable with both panes rendered`,
+  ).toBeLessThan(ATTENTION_BUDGET_MS);
 });

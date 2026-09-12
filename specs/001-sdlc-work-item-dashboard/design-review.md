@@ -195,3 +195,174 @@ Neither is urgent. Both are cheaper than the review they would replace.
 **Pass.** Five principles reviewed, two genuine defects found and fixed during the
 review, one file flagged for future attention, two lint rules proposed as automation
 debt. Nothing was waived.
+
+---
+
+# Appendix: Feature 003, the Two-Pane Workbench (T047)
+
+**Feature**: [003 spec.md](../003-two-pane-workbench/spec.md) · **Date**: 2026-09-12
+
+The same self-attested gate, re-run over `src/renderer` after the list and the
+detail became two panes of one view. This is a narrower review than the one above:
+003 touched the renderer only, so principles IX and XIII are re-examined where the
+feature moved something, and VII, VIII and X are re-examined in full for the
+changed files.
+
+003's tasks.md poses the review's central question directly, which is unusual and
+worth honouring literally:
+
+> did `Workbench.tsx` stay arrangement-only, or did it accumulate both panes'
+> responsibilities?
+
+## VII. Optimize for Deletion, Not Extension
+
+**The stated test**: deleting `Workbench.tsx` and restoring two route entries
+returns the product to two full-width pages, with no change to either pane's
+source.
+
+**Does it hold?** Yes, and it was checked rather than assumed. Removing the shell
+would require: deleting `Workbench.tsx`, `PaneToggle.tsx`, `CollapsedRail.tsx`,
+`NoSelection.tsx`, `usePaneState.ts` and one delimited section of `styles.css`,
+then restoring two sibling `<Route>` entries in `App.tsx`. `Items.tsx` and
+`ItemDetail.tsx` would keep working untouched — both of their new parameters
+(`selectedKey`, `selected`) are optional and default to the pre-003 behaviour,
+which is exactly why 001's suites for them still pass unedited.
+
+**Size**: `Workbench.tsx` is 224 lines, of which **116 are code** and the balance
+is commentary. It holds a grid, a toggle, a scroll offset, a media query and an
+outlet. It is comfortably inside "one engineer could delete and rewrite it in a
+day".
+
+**Two deviations from tasks.md, both taken deliberately, both in this principle's
+service.** They are recorded here rather than buried, because each moved work
+*out* of the shell that the task list had placed *in* it:
+
+1. **T027 said render the attention count in `Workbench.tsx`.** Doing so would
+   have made the shell call `useItems()` — a data read, which T013 forbids in the
+   same breath. The count lives in `CollapsedRail.tsx` (23 code lines) instead,
+   and the shell places it. The rejected simpler alternative was to let the shell
+   fetch; it was rejected because it is the first step of exactly the accretion
+   this principle warns about.
+2. **T034 said derive the out-of-filter selection in `Workbench.tsx`.** That
+   requires the *filtered* list, which only `Items` computes. Doing it in the
+   shell would have meant duplicating the whole filter pipeline — four URL
+   parameters and the `matches()` predicate — into a component whose stated job is
+   arrangement. It is two derived booleans in `Items.tsx` instead. The rejected
+   alternative was exporting `matches()` from `Items` and re-running it in the
+   shell: the same computation in two places, guaranteed to diverge.
+
+**Verdict: pass.** The shell did not accumulate. Both times the task list pulled
+toward the god component, the work was pushed back down.
+
+## VIII. Make Dependencies Explicit
+
+**Verdict: pass.** No module-level mutable state was added. `usePaneState` reads
+storage through a lazy `useState` initialiser rather than at import, because
+Principle VIII prohibits import-time side effects and a value captured at import
+would be stale for any test that seeded storage afterwards.
+
+The one judgement worth naming: `ItemRow` takes `selected` as a **prop** rather
+than reading the route. A row that called `useParams` would be a row that cannot
+render without a router — and 001's `ItemList` suite renders rows by the dozen.
+The shell reads the route once and passes the answer down.
+
+## X. Render What You Can Prove
+
+**Verdict: pass, and the feature added the product's most-seen empty state.**
+`NoSelection` is half the window every time the application opens, and it renders
+copy saying what selecting will do rather than a blank column. It is a separate
+component rather than a branch inside `ItemDetail` for a Principle XII reason:
+`ItemDetail` is the lazy boundary holding ~50 KB of markdown machinery, and a
+branch inside it would have pulled that chunk down to render a paragraph.
+
+Three other places where the feature had to choose between showing something and
+showing nothing, and chose the honest option:
+
+- **The collapsed rail renders nothing until the item query succeeds.** A count
+  that guessed zero would be a claim the application cannot yet prove — and the
+  specific claim "nothing needs you", which is the worst one to get wrong.
+- **The rail's count is unfiltered.** Collapsed, the filter controls are not on
+  screen, so a filtered count could tell an engineer to stop looking while
+  something waited behind a filter they cannot see.
+- **A vanished item is not an error.** `not_found` now renders the deliberate
+  "nothing" treatment with a way back, rather than a failure with a retry that
+  cannot succeed.
+
+## XIII. State Lives at the Edge It Is Needed
+
+**Verdict: pass, with the constitution's required written justification supplied.**
+
+003 introduced the first persisted client preference in this product:
+`sdlc.workbench.listCollapsed`. The principle calls global client state a last
+resort requiring written justification; the justification is in
+[003's research.md §3](../003-two-pane-workbench/research.md), restated in the
+hook's own docblock, and it is not hand-waving — FR-011 requires the state to
+survive a **restart**, which a URL cannot do, and the value describes the
+engineer's furniture rather than any work item.
+
+The dividing line the feature drew is legible and worth keeping: **the URL holds
+what another person or another session should be able to arrive at; local storage
+holds what only this engineer at this desk cares about.** Selection, filters,
+search and the state tab all stayed in the URL.
+
+Still no store, no context, no module-level variable. One boolean, read by one
+component.
+
+**One correctness area that belongs under this principle rather than under a
+feature — and the more instructive half of it was nearly missed.**
+
+`Items` read `?state=` as the list filter and `ItemDetail` read `?state=` as the
+selected tab. As sibling routes they never shared a query string and the collision
+was invisible; as two panes of one view they read and write the same URL. The
+detail's parameter is now `?tab=`. data-model.md caught that half by enumerating
+where each value lives instead of assuming it.
+
+**It did not catch the other half, and the other half is the one worth learning
+from.** Renaming the parameter stopped the tab from filtering the list. It did
+nothing about the list *erasing* the tab — because `setFilter` built a fresh
+`URLSearchParams` and replaced the whole query string, discarding every key the
+list does not own. Correct while the list was a page that owned its URL; silently
+destructive the moment it became a pane. Every filter change and **every keystroke
+in the search box** deleted `?tab=` and snapped the open item back to the state it
+occupies.
+
+Three things about how it was found are worth recording:
+
+- **The planned test suite did not catch it.** T030 asserted "filtering changes
+  the list and not the detail" and passed throughout, because the detail kept
+  showing the same *item*. Only its tab reverted. The assertion was true and the
+  behaviour was wrong.
+- **It was found by walking the quickstart against a built application**, which is
+  precisely what 003's tasks.md said T040 and T041 were for and precisely the step
+  easiest to skip once the suite is green.
+- **The diagnosis was one-directional.** research.md §2 described the collision as
+  a single problem with a single fix. It was two problems that fail through
+  different code, and naming it once made the second invisible. A collision
+  between two writers of shared state should be enumerated **per writer**, not per
+  key.
+
+The fix and its regression test — which exercises both directions and all three of
+the list's write paths, and was verified against a negative control — are recorded
+in [003's baseline.md](../003-two-pane-workbench/baseline.md) under T042.
+
+## Automation debt
+
+One new candidate, added to the two still outstanding above:
+
+3. **The pane-preference key should have exactly one reader.** "Nothing outside
+   the hook reads `sdlc.workbench.listCollapsed`" is currently a claim asserted by
+   a test over the source tree. Like Principle IX's `dangerouslySetInnerHTML`
+   check, it would be better as a lint rule, failing at the point of writing.
+
+## Verdict
+
+**Pass.** Four principles re-reviewed over the changed renderer. No violation
+found, no waiver taken. Two task-list instructions were deviated from, both to
+keep the shell from accumulating responsibilities, and both are recorded above
+with the simpler alternative that was rejected. One real defect was found — by
+walking the quickstart, not by the suite — fixed, and covered by a regression test
+proven against a negative control.
+
+The thing most worth watching is not in the code yet: `Workbench.tsx` is small and
+correct *today*. Its failure mode is accretion, one reasonable-looking addition at
+a time, and the boundary test in this section is the only thing that will notice.

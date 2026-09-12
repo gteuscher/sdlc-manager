@@ -3,7 +3,10 @@
 A desktop dashboard for work items moving through agentic software development lifecycles.
 
 It reads each lifecycle from the agent package that executes it, and shows you every work item in
-flight, which state each one occupies, and which ones are waiting on you.
+flight, which state each one occupies, and which ones are waiting on you — the items in a
+persistent list down the left, the selected one's detail beside it, both at once. The list
+collapses when an artifact needs the width, and still says how many items are waiting on you while
+collapsed.
 
 **It observes. It does not act.** v1.0 is read-only with respect to every system of record: it
 performs no state transition, no gate approval, no check retry. That is not restraint in the use of

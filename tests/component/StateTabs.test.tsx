@@ -246,12 +246,12 @@ describe('the item detail state tabs', () => {
     await userEvent.click(screen.getByRole('tab', { name: /Clearing/ }));
 
     // FR-015, Principle XIII: a state view is a link, not a piece of hidden state.
-    expect(screen.getByTestId('query-string').textContent).toContain('state=clearing');
+    expect(screen.getByTestId('query-string').textContent).toContain('tab=clearing');
     expect(selectedTab().textContent).toContain('Clearing');
   });
 
   it('opens on the state the URL names, so a state view can be returned to directly', async () => {
-    mount(stubFor(fourthOfSix()), '/items/LED-42?state=dispatch');
+    mount(stubFor(fourthOfSix()), '/items/LED-42?tab=dispatch');
 
     await screen.findByRole('tablist');
     // The URL wins over the state the item occupies — that is what "returned to
@@ -271,7 +271,7 @@ describe('the item detail state tabs', () => {
       ),
     };
     const stub = stubFor(withDeclared);
-    mount(stub, '/items/LED-42?state=proofing');
+    mount(stub, '/items/LED-42?tab=proofing');
 
     await screen.findByRole('tablist');
 

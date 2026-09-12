@@ -20,6 +20,18 @@
  * be a poll of every provider to answer a question already in memory. SC-008's
  * 200 items across 3 repositories is a trivial array for this to work over.
  *
+ * **It does not know it is a pane (003).** The workbench mounts this component
+ * beside a detail pane, and nothing below changed to accommodate that: no width,
+ * no layout, no awareness of what is on the other side. The one thing it gained
+ * is `selectedKey` — which row the engineer is currently reading — and that is
+ * not knowledge of another component, it is a property of a list. A list has to
+ * know which of its rows is current in order to mark it (FR-005), and it has to
+ * know in order to say so when its own filters have excluded it (FR-015).
+ *
+ * The prop is optional and defaults to "nothing selected", so the list renders
+ * exactly as it always did when mounted alone — which is what keeps 001's suite
+ * for it passing unedited, and that suite is the whole regression net for FR-021.
+ *
  * **Nothing here knows a state name.** Every option, label, and grouping is read
  * from the summaries the main process resolved against each repository's own
  * loaded definition (Principle II, SC-003, SC-010). Two repositories on different
@@ -92,7 +104,16 @@ function attentionFirst(items: readonly WorkItemSummary[]): WorkItemSummary[] {
   return [...items.filter(needsAttention), ...items.filter((item) => !needsAttention(item))];
 }
 
-export function Items(): ReactElement {
+export interface ItemsProps {
+  /**
+   * The key of the item open in the detail pane, or null when nothing is
+   * selected. Supplied by the workbench, which reads it off the route; the list
+   * never reads the route itself, and neither does a row (Principle VIII).
+   */
+  readonly selectedKey?: string | null;
+}
+
+export function Items({ selectedKey = null }: ItemsProps): ReactElement {
   const headingId = useId();
   const [params, setParams] = useSearchParams();
 
@@ -110,23 +131,56 @@ export function Items(): ReactElement {
     [params],
   );
 
-  const setFilter = useCallback(
-    (next: ItemFilterValue) => {
-      const updated = new URLSearchParams();
-      if (next.repositoryId !== '') updated.set(PARAM_REPOSITORY, next.repositoryId);
-      if (next.packageId !== '') updated.set(PARAM_SDLC, next.packageId);
-      if (next.stateId !== '') updated.set(PARAM_STATE, next.stateId);
-      if (next.search !== '') updated.set(PARAM_SEARCH, next.search);
+  /**
+   * 003 — the list writes **only its own four keys**, and leaves the rest of the
+   * query string exactly as it found it.
+   *
+   * This used to build a fresh `URLSearchParams` and hand it over whole, which
+   * was correct while the list was a page: it owned its URL, and there was
+   * nothing else in the query string to lose. As a pane it shares one URL with
+   * the detail beside it, and replacing the whole query string deleted the
+   * detail's `?tab=` on every filter change and every keystroke in the search
+   * box — the open item silently jumped back to the state it occupies.
+   *
+   * That is the *second half* of the collision research.md §2 describes. Renaming
+   * the detail's parameter stopped the tab from filtering the list; it did not
+   * stop the list from erasing the tab, because the two halves fail through
+   * different code. Both directions were required — FR-013 for the filter and
+   * 001's FR-015 for the tab — so neither may clobber the other.
+   *
+   * Every filter key is deleted before the surviving ones are set, so clearing a
+   * single select removes its key rather than leaving a stale value behind.
+   */
+  const writeFilterKeys = useCallback(
+    (mutate: (into: URLSearchParams) => void) => {
+      const updated = new URLSearchParams(params);
+      for (const key of [PARAM_REPOSITORY, PARAM_SDLC, PARAM_STATE, PARAM_SEARCH]) {
+        updated.delete(key);
+      }
+      mutate(updated);
       // Replace rather than push: typing in the search box must not bury the
       // previous page under one history entry per keystroke.
       setParams(updated, { replace: true });
     },
-    [setParams],
+    [params, setParams],
   );
 
+  const setFilter = useCallback(
+    (next: ItemFilterValue) => {
+      writeFilterKeys((updated) => {
+        if (next.repositoryId !== '') updated.set(PARAM_REPOSITORY, next.repositoryId);
+        if (next.packageId !== '') updated.set(PARAM_SDLC, next.packageId);
+        if (next.stateId !== '') updated.set(PARAM_STATE, next.stateId);
+        if (next.search !== '') updated.set(PARAM_SEARCH, next.search);
+      });
+    },
+    [writeFilterKeys],
+  );
+
+  /** Clears the filters and nothing else — the open item's tab is not a filter. */
   const clearFilter = useCallback(() => {
-    setParams(new URLSearchParams(), { replace: true });
-  }, [setParams]);
+    writeFilterKeys(() => undefined);
+  }, [writeFilterKeys]);
 
   const all = useMemo(() => items.data ?? [], [items.data]);
   const visible = useMemo(
@@ -136,6 +190,19 @@ export function Items(): ReactElement {
 
   const attentionTotal = all.filter(needsAttention).length;
   const attentionVisible = visible.filter(needsAttention).length;
+
+  // FR-015, and data-model.md §"Derived, not stored". Whether the open item is
+  // among the listed ones is a function of the selection and the current filters,
+  // recomputed on every render. Remembering "the selection was excluded" would be
+  // wrong the moment the filter changed again, and there is no cheaper way to be
+  // reliably right than to ask the question each time.
+  //
+  // The two conditions are kept apart deliberately: an item that is not in `all`
+  // has not been excluded by a filter — it has not loaded, or no longer exists —
+  // and saying "your filters are hiding it" would be a guess (Principle X).
+  const selectionExists = selectedKey !== null && all.some((item) => item.key === selectedKey);
+  const selectionExcluded =
+    selectionExists && !visible.some((item) => item.key === selectedKey);
 
   const repositoryOptions = useMemo(
     () =>
@@ -284,6 +351,7 @@ export function Items(): ReactElement {
           <ItemRow
             key={item.key}
             item={item}
+            selected={item.key === selectedKey}
             onRetry={onRetry}
             retrying={retryingKey === item.key && !retryTimedOut}
             retryProblem={retryProblemFor(item.key)}
@@ -317,6 +385,18 @@ export function Items(): ReactElement {
           onClear={clearFilter}
         />
       )}
+
+      {/* FR-015. The detail keeps showing what is being read even when the
+          filters no longer list it, and a list that silently dropped the row
+          would leave the engineer looking for an item that appears to be gone.
+          `role="status"`, because the row vanishes the instant a filter is
+          typed and the explanation has to arrive with it. */}
+      {selectionExcluded ? (
+        <p className="items__excluded" role="status">
+          The item open beside this list is not among those shown — the current filters exclude it.
+          It is still open, and clearing the filters will bring it back into the list.
+        </p>
+      ) : null}
 
       {content}
     </section>

@@ -49,8 +49,8 @@ beneath it is finished.
 
 **Purpose**: Establish the baseline this feature must not regress.
 
-- [ ] T001 Record the FR-021 baseline in `specs/003-two-pane-workbench/baseline.md`: run `npm run verify`, and write down the passing test count per suite, the initial-JS figure from `npm run size`, and the list of 001 component suites that must still pass unedited at the end
-- [ ] T002 [P] Confirm the markdown chunk boundary before touching anything: run `npm run build && npx size-limit` and record that `dist/renderer/assets/MarkdownArtifact*.js` is a separate chunk, so a later regression is attributable
+- [X] T001 Record the FR-021 baseline in `specs/003-two-pane-workbench/baseline.md`: run `npm run verify`, and write down the passing test count per suite, the initial-JS figure from `npm run size`, and the list of 001 component suites that must still pass unedited at the end
+- [X] T002 [P] Confirm the markdown chunk boundary before touching anything: run `npm run build && npx size-limit` and record that `dist/renderer/assets/MarkdownArtifact*.js` is a separate chunk, so a later regression is attributable
 
 ---
 
@@ -62,10 +62,10 @@ every user story depends on.
 **⚠️ CRITICAL**: T003 must land before any pane work. It is a correctness fix, not
 a tidy-up — without it the two panes silently rewrite each other's URL state.
 
-- [ ] T003 Rename the detail pane's tab parameter from `state` to `tab` in `src/renderer/routes/ItemDetail.tsx`: change `const PARAM_STATE = 'state'` to `const PARAM_TAB = 'tab'` and every read and write of it. `Items.tsx` keeps `?state=` for the list filter, unchanged (research.md §2)
-- [ ] T004 Update the tab-parameter assertion in `tests/component/StateTabs.test.tsx` to `?tab=`. **This change should be one line.** If it is larger, the test is coupled to something it should not be — report it rather than expanding the edit
-- [ ] T005 [P] Implement `src/renderer/query/usePaneState.ts`: reads and persists the list-collapsed preference at key `sdlc.workbench.listCollapsed` with values exactly `"true" | "false"`; **absent means expanded**; **an unreadable or throwing storage means expanded** — the state in which nothing is hidden (data-model.md §Persistence shape)
-- [ ] T006 [P] Test `usePaneState` in `tests/component/usePaneState.test.tsx`: absent key yields expanded, a storage accessor that throws yields expanded rather than propagating, a write is read back, and nothing outside the hook reads the key
+- [X] T003 Rename the detail pane's tab parameter from `state` to `tab` in `src/renderer/routes/ItemDetail.tsx`: change `const PARAM_STATE = 'state'` to `const PARAM_TAB = 'tab'` and every read and write of it. `Items.tsx` keeps `?state=` for the list filter, unchanged (research.md §2)
+- [X] T004 Update the tab-parameter assertion in `tests/component/StateTabs.test.tsx` to `?tab=`. **This change should be one line.** If it is larger, the test is coupled to something it should not be — report it rather than expanding the edit
+- [X] T005 [P] Implement `src/renderer/query/usePaneState.ts`: reads and persists the list-collapsed preference at key `sdlc.workbench.listCollapsed` with values exactly `"true" | "false"`; **absent means expanded**; **an unreadable or throwing storage means expanded** — the state in which nothing is hidden (data-model.md §Persistence shape)
+- [X] T006 [P] Test `usePaneState` in `tests/component/usePaneState.test.tsx`: absent key yields expanded, a storage accessor that throws yields expanded rather than propagating, a write is read back, and nothing outside the hook reads the key
 
 **Checkpoint**: the collision is gone and the preference exists. Pane work can begin.
 
@@ -83,23 +83,23 @@ markers.
 
 ### Tests for User Story 1
 
-- [ ] T007 [P] [US1] Test simultaneity in `tests/component/Workbench.test.tsx`: with an item selected, the list and the detail are both in the document, and every other item's attention marker is still present (FR-001, SC-001)
-- [ ] T008 [P] [US1] Test that selection does not disturb the list in `tests/component/Workbench.test.tsx`: selecting a second item changes the detail while the list keeps its scroll position and is not remounted (FR-004)
-- [ ] T009 [P] [US1] Test selection marking in `tests/component/Workbench.test.tsx`: the selected row carries `aria-current` and is distinguishable **without relying on colour** (FR-005)
-- [ ] T010 [P] [US1] Test the no-selection pane in `tests/component/Workbench.test.tsx`: with nothing selected the detail region contains deliberate copy, not an empty region and not a spinner (FR-006, Principle X)
-- [ ] T011 [P] [US1] Test landmarks and `vitest-axe` over the assembled view in `tests/component/Workbench.test.tsx`: exactly one `main` named "Item detail", one `complementary` named "Work items", and no violations (gate 6, contracts/workbench-layout.md §2)
-- [ ] T012 [P] [US1] Test independent failure in `tests/component/Workbench.test.tsx`: a detail pane that throws leaves the list rendered and selectable (FR-019)
+- [X] T007 [P] [US1] Test simultaneity in `tests/component/Workbench.test.tsx`: with an item selected, the list and the detail are both in the document, and every other item's attention marker is still present (FR-001, SC-001)
+- [X] T008 [P] [US1] Test that selection does not disturb the list in `tests/component/Workbench.test.tsx`: selecting a second item changes the detail while the list keeps its scroll position and is not remounted (FR-004)
+- [X] T009 [P] [US1] Test selection marking in `tests/component/Workbench.test.tsx`: the selected row carries `aria-current` and is distinguishable **without relying on colour** (FR-005)
+- [X] T010 [P] [US1] Test the no-selection pane in `tests/component/Workbench.test.tsx`: with nothing selected the detail region contains deliberate copy, not an empty region and not a spinner (FR-006, Principle X)
+- [X] T011 [P] [US1] Test landmarks and `vitest-axe` over the assembled view in `tests/component/Workbench.test.tsx`: exactly one `main` named "Item detail", one `complementary` named "Work items", and no violations (gate 6, contracts/workbench-layout.md §2)
+- [X] T012 [P] [US1] Test independent failure in `tests/component/Workbench.test.tsx`: a detail pane that throws leaves the list rendered and selectable (FR-019)
 
 ### Implementation for User Story 1
 
-- [ ] T013 [US1] Create the shell in `src/renderer/routes/Workbench.tsx`: a two-column grid holding the list pane and `<Outlet />`, full viewport height. **Arrangement only** — no data fetching, no filter logic, no knowledge of either pane's internals (plan.md §Structure Decision)
-- [ ] T014 [P] [US1] Create `src/renderer/components/NoSelection.tsx`: the detail pane with nothing selected, carrying copy that says what selecting an item does (FR-006)
-- [ ] T015 [US1] Restructure the routes in `src/renderer/App.tsx`: `/` becomes a layout route rendering `Workbench`, with an index child rendering `NoSelection` and an `items/:key` child rendering the lazy `ItemDetail`. `/repositories` is untouched (FR-022). **Every existing URL must still resolve** (FR-007)
-- [ ] T016 [US1] Add the landmarks and accessible names in `src/renderer/routes/Workbench.tsx`: list pane `complementary` named "Work items", detail pane `main` named "Item detail". The list is **not** `navigation` — it is a list of work with status, and calling it navigation misdescribes it (contracts/workbench-layout.md §2)
-- [ ] T017 [US1] Give each pane its own error boundary in `src/renderer/routes/Workbench.tsx` using the existing `RouteErrorBoundary`, so a thrown render in one pane cannot blank the other (FR-019)
-- [ ] T018 [US1] Mark the selected item in `src/renderer/components/ItemRow.tsx`: `aria-current` plus a non-colour cue. Take selection as a prop — the row must not learn to read the route (Principle VIII)
-- [ ] T019 [US1] Add the two-column grid to `src/renderer/styles.css` under a clearly delimited section, using the full window height (FR-003)
-- [ ] T020 [US1] Confirm `ItemDetail` is still reached through `React.lazy` in `src/renderer/App.tsx`, so `react-markdown` stays out of the initial bundle — run `npm run build && npx size-limit` and compare against the T002 record (Principle XII)
+- [X] T013 [US1] Create the shell in `src/renderer/routes/Workbench.tsx`: a two-column grid holding the list pane and `<Outlet />`, full viewport height. **Arrangement only** — no data fetching, no filter logic, no knowledge of either pane's internals (plan.md §Structure Decision)
+- [X] T014 [P] [US1] Create `src/renderer/components/NoSelection.tsx`: the detail pane with nothing selected, carrying copy that says what selecting an item does (FR-006)
+- [X] T015 [US1] Restructure the routes in `src/renderer/App.tsx`: `/` becomes a layout route rendering `Workbench`, with an index child rendering `NoSelection` and an `items/:key` child rendering the lazy `ItemDetail`. `/repositories` is untouched (FR-022). **Every existing URL must still resolve** (FR-007)
+- [X] T016 [US1] Add the landmarks and accessible names in `src/renderer/routes/Workbench.tsx`: list pane `complementary` named "Work items", detail pane `main` named "Item detail". The list is **not** `navigation` — it is a list of work with status, and calling it navigation misdescribes it (contracts/workbench-layout.md §2)
+- [X] T017 [US1] Give each pane its own error boundary in `src/renderer/routes/Workbench.tsx` using the existing `RouteErrorBoundary`, so a thrown render in one pane cannot blank the other (FR-019)
+- [X] T018 [US1] Mark the selected item in `src/renderer/components/ItemRow.tsx`: `aria-current` plus a non-colour cue. Take selection as a prop — the row must not learn to read the route (Principle VIII)
+- [X] T019 [US1] Add the two-column grid to `src/renderer/styles.css` under a clearly delimited section, using the full window height (FR-003)
+- [X] T020 [US1] Confirm `ItemDetail` is still reached through `React.lazy` in `src/renderer/App.tsx`, so `react-markdown` stays out of the initial bundle — run `npm run build && npx size-limit` and compare against the T002 record (Principle XII)
 
 **Checkpoint**: US1 is fully functional and independently demonstrable. This is the MVP, and it is the whole feature; everything after refines it.
 
@@ -115,18 +115,18 @@ selection are intact.
 
 ### Tests for User Story 2
 
-- [ ] T021 [P] [US2] Test collapse and expand in `tests/component/Workbench.test.tsx`: the control toggles the pane, and `aria-expanded` reflects the state (FR-008)
-- [ ] T022 [P] [US2] Test the collapsed rail still reports attention in `tests/component/Workbench.test.tsx`: with items needing attention, the count is present without expanding (FR-009) — a rail that hides the one signal the workbench exists to surface has defeated its own purpose
-- [ ] T023 [P] [US2] Test restoration in `tests/component/Workbench.test.tsx`: expanding restores the prior selection, and the collapse state survives a remount (FR-010, FR-011)
-- [ ] T024 [P] [US2] Test keyboard operation in `tests/component/Workbench.test.tsx`: the control is reachable and operable by keyboard in **both** states — a pane collapsed to nothing must not take its own expand control with it (FR-012)
+- [X] T021 [P] [US2] Test collapse and expand in `tests/component/Workbench.test.tsx`: the control toggles the pane, and `aria-expanded` reflects the state (FR-008)
+- [X] T022 [P] [US2] Test the collapsed rail still reports attention in `tests/component/Workbench.test.tsx`: with items needing attention, the count is present without expanding (FR-009) — a rail that hides the one signal the workbench exists to surface has defeated its own purpose
+- [X] T023 [P] [US2] Test restoration in `tests/component/Workbench.test.tsx`: expanding restores the prior selection, and the collapse state survives a remount (FR-010, FR-011)
+- [X] T024 [P] [US2] Test keyboard operation in `tests/component/Workbench.test.tsx`: the control is reachable and operable by keyboard in **both** states — a pane collapsed to nothing must not take its own expand control with it (FR-012)
 
 ### Implementation for User Story 2
 
-- [ ] T025 [US2] Create `src/renderer/components/PaneToggle.tsx`: a real `<button>` with `aria-expanded` and `aria-controls`, labelled "Hide the work item list" / "Show the work item list" (contracts/workbench-layout.md §2)
-- [ ] T026 [US2] Wire `usePaneState` into `src/renderer/routes/Workbench.tsx` so the collapse state persists across navigation and restarts (FR-011)
-- [ ] T027 [US2] Render the attention count in the collapsed rail in `src/renderer/routes/Workbench.tsx`, reusing `AttentionCount` rather than duplicating its logic (FR-009)
-- [ ] T028 [US2] Add the collapsed grid state to `src/renderer/styles.css`: the detail takes the freed width, and the toggle remains visible and focusable (FR-008, FR-012)
-- [ ] T029 [US2] Preserve list scroll position across collapse and expand in `src/renderer/routes/Workbench.tsx` — hide the pane rather than unmounting the list, so the browser keeps the position for us (FR-010)
+- [X] T025 [US2] Create `src/renderer/components/PaneToggle.tsx`: a real `<button>` with `aria-expanded` and `aria-controls`, labelled "Hide the work item list" / "Show the work item list" (contracts/workbench-layout.md §2)
+- [X] T026 [US2] Wire `usePaneState` into `src/renderer/routes/Workbench.tsx` so the collapse state persists across navigation and restarts (FR-011)
+- [X] T027 [US2] Render the attention count in the collapsed rail in `src/renderer/routes/Workbench.tsx`, reusing `AttentionCount` rather than duplicating its logic (FR-009)
+- [X] T028 [US2] Add the collapsed grid state to `src/renderer/styles.css`: the detail takes the freed width, and the toggle remains visible and focusable (FR-008, FR-012)
+- [X] T029 [US2] Preserve list scroll position across collapse and expand in `src/renderer/routes/Workbench.tsx` — hide the pane rather than unmounting the list, so the browser keeps the position for us (FR-010)
 
 **Checkpoint**: US1 and US2 both work independently.
 
@@ -141,14 +141,14 @@ confirm the detail still shows that item while the list narrows.
 
 ### Tests for User Story 3
 
-- [ ] T030 [P] [US3] Test that narrowing leaves the detail alone in `tests/component/Workbench.test.tsx`: applying a filter changes the list and not the detail (FR-014)
-- [ ] T031 [P] [US3] Test the excluded selection in `tests/component/Workbench.test.tsx`: a filter that excludes the selected item leaves it rendered in the detail, and the list conveys that the selection is not currently listed (FR-015)
-- [ ] T032 [P] [US3] Test restoration in `tests/component/Workbench.test.tsx`: mounting at a URL carrying filter, search and selection restores all three (FR-016)
+- [X] T030 [P] [US3] Test that narrowing leaves the detail alone in `tests/component/Workbench.test.tsx`: applying a filter changes the list and not the detail (FR-014)
+- [X] T031 [P] [US3] Test the excluded selection in `tests/component/Workbench.test.tsx`: a filter that excludes the selected item leaves it rendered in the detail, and the list conveys that the selection is not currently listed (FR-015)
+- [X] T032 [P] [US3] Test restoration in `tests/component/Workbench.test.tsx`: mounting at a URL carrying filter, search and selection restores all three (FR-016)
 
 ### Implementation for User Story 3
 
-- [ ] T033 [US3] Lay out the filters for the narrow pane in `src/renderer/components/ItemFilters.tsx` and `src/renderer/styles.css`: stacked rather than in a row, legible and usable at rail width (FR-013). **Behaviour is unchanged** — this is layout only
-- [ ] T034 [US3] Convey an out-of-filter selection in `src/renderer/routes/Workbench.tsx`: derive it at render time by testing the selected key against the filtered list, and say so in the list pane. **Do not persist "the selection was excluded"** — deriving it is what keeps it correct when the filter changes again (data-model.md §Derived, not stored)
+- [X] T033 [US3] Lay out the filters for the narrow pane in `src/renderer/components/ItemFilters.tsx` and `src/renderer/styles.css`: stacked rather than in a row, legible and usable at rail width (FR-013). **Behaviour is unchanged** — this is layout only
+- [X] T034 [US3] Convey an out-of-filter selection in `src/renderer/routes/Workbench.tsx`: derive it at render time by testing the selected key against the filtered list, and say so in the list pane. **Do not persist "the selection was excluded"** — deriving it is what keeps it correct when the filter changes again (data-model.md §Derived, not stored)
 
 **Checkpoint**: all three stories are independently functional.
 
@@ -159,24 +159,24 @@ confirm the detail still shows that item while the list narrows.
 **Purpose**: The behaviours FR-017 to FR-020 require, which belong to no single
 story because they are about the view failing well.
 
-- [ ] T035 [P] Test narrow-window behaviour in `tests/component/Workbench.test.tsx`: below the threshold exactly one pane is present, with a control to reach the other, and neither is rendered unusably narrow (FR-017, SC-007)
-- [ ] T036 Implement single-pane mode in `src/renderer/styles.css` and `src/renderer/routes/Workbench.tsx`: below the width at which both panes are usable, show one at a time with an explicit control between them. The URL still decides which (research.md §4). **Squeezing both is not an acceptable degradation**
-- [ ] T037 [P] Test a vanished selection in `tests/component/Workbench.test.tsx`: an item that no longer exists produces a named message and a way back to the list, not a blank pane (FR-018)
-- [ ] T038 Implement the vanished-selection state in `src/renderer/routes/ItemDetail.tsx`, reusing the existing failure treatment rather than adding a new one (FR-018)
-- [ ] T039 [P] Test the deep-link pending state in `tests/component/Workbench.test.tsx`: arriving at `/items/:key` before the list has loaded shows a **bounded** pending state in the detail — bounded, because Principle X forbids a spinner without a timeout (FR-020)
+- [X] T035 [P] Test narrow-window behaviour in `tests/component/Workbench.test.tsx`: below the threshold exactly one pane is present, with a control to reach the other, and neither is rendered unusably narrow (FR-017, SC-007)
+- [X] T036 Implement single-pane mode in `src/renderer/styles.css` and `src/renderer/routes/Workbench.tsx`: below the width at which both panes are usable, show one at a time with an explicit control between them. The URL still decides which (research.md §4). **Squeezing both is not an acceptable degradation**
+- [X] T037 [P] Test a vanished selection in `tests/component/Workbench.test.tsx`: an item that no longer exists produces a named message and a way back to the list, not a blank pane (FR-018)
+- [X] T038 Implement the vanished-selection state in `src/renderer/routes/ItemDetail.tsx`, reusing the existing failure treatment rather than adding a new one (FR-018)
+- [X] T039 [P] Test the deep-link pending state in `tests/component/Workbench.test.tsx`: arriving at `/items/:key` before the list has loaded shows a **bounded** pending state in the detail — bounded, because Principle X forbids a spinner without a timeout (FR-020)
 
 ---
 
 ## Phase 7: Polish & Cross-Cutting Concerns
 
-- [ ] T040 **Prove FR-021.** Run `npx vitest run` and confirm `tests/component/{ItemList,StateTabs,GateList,ArtifactPanel,Markdown.safety,Console}.test.tsx` all pass, and that none was edited beyond T004's single line. Record the result in `specs/003-two-pane-workbench/baseline.md` against the T001 figures. **Any suite needing adjustment is a finding, not a chore** — report which, and why
-- [ ] T041 Run 001's quickstart scenarios V1–V5 against the workbench and record the results in `specs/003-two-pane-workbench/baseline.md` (SC-004). Attention-first ordering, the two visibly distinct markers, the attention count, unmapped raw values, provider disagreement, stale-with-retry, state tabs opening on the current state, the three gate statuses, artifact provenance, and the console must all still hold
-- [ ] T042 [P] Run quickstart.md scenarios W1–W12 and record the results in `specs/003-two-pane-workbench/baseline.md`, including SC-002's "one interaction to the next item" and SC-006's keyboard-only pass as observations
-- [ ] T043 [P] Extend `tests/smoke/scale.spec.ts` to select an item after the list renders, so SC-005 measures 200+ items **with both panes rendered** rather than the list alone (research.md §8)
-- [ ] T044 [P] Add `tests/smoke/workbench.spec.ts`: in the built application, both panes are present, selecting an item changes only the detail, and the collapse state survives a relaunch
-- [ ] T045 [P] Confirm `npm run size` passes and record the actual initial-JS figure against the ~141.2 KB projection in research.md §7. **If it fails, move `Items` behind a lazy boundary or trim the shell — do not raise the budget**
-- [ ] T046 [P] Update `README.md` if the two-pane arrangement changes what a first-time reader should expect to see
-- [ ] T047 Review `src/renderer` against the design-judgment principles VII, VIII, X and XIII, and append the result to `specs/001-sdlc-work-item-dashboard/design-review.md`. Specifically: did `Workbench.tsx` stay arrangement-only, or did it accumulate both panes' responsibilities?
+- [X] T040 **Prove FR-021.** Run `npx vitest run` and confirm `tests/component/{ItemList,StateTabs,GateList,ArtifactPanel,Markdown.safety,Console}.test.tsx` all pass, and that none was edited beyond T004's single line. Record the result in `specs/003-two-pane-workbench/baseline.md` against the T001 figures. **Any suite needing adjustment is a finding, not a chore** — report which, and why
+- [X] T041 Run 001's quickstart scenarios V1–V5 against the workbench and record the results in `specs/003-two-pane-workbench/baseline.md` (SC-004). Attention-first ordering, the two visibly distinct markers, the attention count, unmapped raw values, provider disagreement, stale-with-retry, state tabs opening on the current state, the three gate statuses, artifact provenance, and the console must all still hold
+- [X] T042 [P] Run quickstart.md scenarios W1–W12 and record the results in `specs/003-two-pane-workbench/baseline.md`, including SC-002's "one interaction to the next item" and SC-006's keyboard-only pass as observations
+- [X] T043 [P] Extend `tests/smoke/scale.spec.ts` to select an item after the list renders, so SC-005 measures 200+ items **with both panes rendered** rather than the list alone (research.md §8)
+- [X] T044 [P] Add `tests/smoke/workbench.spec.ts`: in the built application, both panes are present, selecting an item changes only the detail, and the collapse state survives a relaunch
+- [X] T045 [P] Confirm `npm run size` passes and record the actual initial-JS figure against the ~141.2 KB projection in research.md §7. **If it fails, move `Items` behind a lazy boundary or trim the shell — do not raise the budget**
+- [X] T046 [P] Update `README.md` if the two-pane arrangement changes what a first-time reader should expect to see
+- [X] T047 Review `src/renderer` against the design-judgment principles VII, VIII, X and XIII, and append the result to `specs/001-sdlc-work-item-dashboard/design-review.md`. Specifically: did `Workbench.tsx` stay arrangement-only, or did it accumulate both panes' responsibilities?
 
 ---
 

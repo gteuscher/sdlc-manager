@@ -110,13 +110,21 @@ body {
 
 /* ── Shell ────────────────────────────────────────────────────────────────── */
 
+/*
+ * `height`, not `min-height`, since 003: the workbench fills the window exactly
+ * and each pane scrolls on its own (FR-003). A shell that could grow past the
+ * viewport would scroll the whole page, taking the list out of view — which is
+ * the one thing this arrangement exists to prevent.
+ */
 .app {
   display: flex;
   flex-direction: column;
-  min-height: 100%;
+  height: 100%;
+  overflow: hidden;
 }
 
 .app__bar {
+  flex: none;
   display: flex;
   align-items: center;
   gap: 24px;
@@ -154,9 +162,168 @@ body {
   font-weight: 600;
 }
 
+/* Views outside the workbench — the repositories view — keep a scrolling page of
+   their own now that the shell no longer grows with its content. */
 .app__main {
   flex: 1 1 auto;
+  min-height: 0;
   padding: 20px;
+  overflow-y: auto;
+}
+
+/* ── The workbench: two panes of one view (003) ────────────────────────────────
+   Arrangement only. Nothing in this section knows what either pane contains, and
+   the pane rules below never reach inside a pane's own markup except where a
+   comment says why. Deleting this section and the shell that uses it returns the
+   product to two full-width pages. */
+
+.workbench {
+  --workbench-rail: 340px;
+
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: var(--workbench-rail) minmax(0, 1fr);
+}
+
+/* FR-008: the freed width goes to the detail, and the rail keeps only what it
+   needs for the toggle and the attention count. */
+.workbench--collapsed {
+  grid-template-columns: max-content minmax(0, 1fr);
+}
+
+/* FR-017 / SC-007. Below the threshold the shell renders one pane rather than
+   two, so this only has to stop reserving a column for the pane that is gone.
+   The threshold itself is in `Workbench.tsx`, where a test can see it — squeezing
+   both panes is not an acceptable degradation, so there is deliberately no rule
+   here that narrows the rail instead. */
+.workbench[data-narrow='true'] {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.workbench__pane {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.workbench__list {
+  border-right: 1px solid var(--border);
+  background: var(--bg-sunken);
+}
+
+.workbench__list-bar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.workbench__list-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 12px;
+}
+
+.workbench__detail {
+  overflow-y: auto;
+  padding: 20px;
+}
+
+/* Collapsed, the bar becomes the whole rail. The toggle stays at the top and the
+   count runs down beside it: rotated rather than truncated, because FR-009 asks
+   for how many and an ellipsis would not answer it. */
+.workbench--collapsed .workbench__list-bar {
+  flex: 1 1 auto;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  padding: 8px 6px;
+  border-bottom: none;
+}
+
+.collapsed-rail {
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  text-align: start;
+}
+
+.pane-toggle {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.pane-toggle:hover {
+  background: var(--bg);
+  color: var(--text);
+}
+
+/* The rail is narrower than the page the list used to have, so its own controls
+   stack instead of sitting in a row (FR-013). Behaviour is untouched: this is the
+   one place the workbench styles a pane's markup, and it is layout only. */
+.workbench__list-body .items {
+  max-width: none;
+}
+
+.workbench__list-body .filters {
+  flex-direction: column;
+  flex-wrap: nowrap;
+  padding: 10px;
+}
+
+.workbench__list-body .filters__field {
+  min-width: 0;
+}
+
+.workbench__list-body .filters__field--wide {
+  flex: none;
+}
+
+.workbench__list-body .filters__field--action {
+  align-items: flex-start;
+}
+
+.items__excluded {
+  margin: 0 0 var(--gap);
+  padding: 8px 10px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius);
+  color: var(--text-dim);
+}
+
+/* Principle X's most-seen deliberate nothing: half the workbench, every time the
+   application opens with nothing selected. */
+.no-selection {
+  max-width: 34rem;
+  margin: 3rem auto;
+}
+
+.no-selection__title {
+  margin: 0 0 0.75rem;
+  font-size: 20px;
+}
+
+.no-selection__body {
+  margin: 0 0 0.75rem;
+}
+
+.no-selection__hint {
+  margin: 0;
+  color: var(--text-dim);
 }
 
 /* ── Shared bits ──────────────────────────────────────────────────────────── */
@@ -344,6 +511,15 @@ input:focus-visible {
   background: var(--bg-raised);
 }
 
+/* FR-005. Three cues, none of which is colour on its own: the row carries the
+   word "Reading", a heavier and accented left edge, and a raised ground. */
+.row--selected {
+  border-left-color: var(--accent);
+  border-left-width: 5px;
+  background: var(--bg);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
 .row--unmapped {
   border-left-color: var(--unmapped);
 }
@@ -461,6 +637,11 @@ input:focus-visible {
 .tag--disagreement {
   color: var(--text-dim);
   background: var(--bg);
+}
+
+.tag--selected {
+  color: var(--accent);
+  background: var(--bg-raised);
 }
 
 .attention {

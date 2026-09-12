@@ -40,6 +40,15 @@ import { AttentionBadge } from './AttentionBadge';
 
 export interface ItemRowProps {
   readonly item: WorkItemSummary;
+  /**
+   * T018, FR-005 — whether this is the row open in the detail pane.
+   *
+   * A prop, not a route read. The row would only have to look at the URL to
+   * learn something its parent already knows, and a component that reaches for
+   * the router is a component that cannot be rendered without one (Principle
+   * VIII). It defaults to false so a list mounted alone is unchanged.
+   */
+  readonly selected?: boolean;
   readonly onRetry: (key: string) => void;
   readonly retrying: boolean;
   /** An in-place, actionable reason the last retry did not help, or null. */
@@ -58,17 +67,34 @@ function stalenessCopy(freshness: WorkItemSummary['freshness']): string {
     : 'This item’s source has not confirmed these details since they were reconciled.';
 }
 
-export function ItemRow({ item, onRetry, retrying, retryProblem }: ItemRowProps): ReactElement {
+export function ItemRow({
+  item,
+  selected = false,
+  onRetry,
+  retrying,
+  retryProblem,
+}: ItemRowProps): ReactElement {
   const unmapped = isUnmapped(item.stateId);
   const recorded = item.rawState === '' ? '(no value recorded)' : item.rawState;
 
+  const classes = ['row'];
+  if (unmapped) classes.push('row--unmapped');
+  if (selected) classes.push('row--selected');
+
   return (
-    <li className={unmapped ? 'row row--unmapped' : 'row'}>
+    // `aria-current` is the whole of what assistive technology needs here, and it
+    // is on the row rather than the link because what is current is the item, not
+    // a destination — the engineer is already there.
+    <li className={classes.join(' ')} aria-current={selected ? true : undefined}>
       <div className="row__head">
         <Link className="row__link" to={`/items/${encodeURIComponent(item.key)}`}>
           <span className="row__key">{item.key}</span>
           <span className="row__title">{item.title}</span>
         </Link>
+        {/* Principle XI: never colour alone. The row is also tinted and carries a
+            heavier edge, but the word is what survives greyscale, a monochrome
+            display, and every form of colour blindness at once. */}
+        {selected ? <span className="tag tag--selected">Reading</span> : null}
         {item.attention === null ? null : <AttentionBadge signal={item.attention} />}
       </div>
 
