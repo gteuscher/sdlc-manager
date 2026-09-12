@@ -98,6 +98,8 @@ export const workItemSummarySchema = z.object({
   reconciledAt: z.string(),
   freshness: freshnessSchema,
   disagreements: z.array(providerDisagreementSchema),
+  /** 004. Required, not optional — see `WorkItemSummary.terminal`. */
+  terminal: z.boolean(),
 });
 
 export const gateViewSchema = z.object({
@@ -180,6 +182,15 @@ export const sdlcPackageSummarySchema = z.object({
   problemField: z.string().nullable(),
   problemLine: z.number().nullable(),
   stateCount: z.number(),
+  /**
+   * 004. How many of this package's states are declared terminal.
+   *
+   * A count, not a verdict. Zero means the lifecycle never lets work go and its
+   * items never leave the active list; equal to `stateCount` means it finishes
+   * work the instant it appears. One number answers both, and what to *say*
+   * about either is the view's business, not the engine's (research.md §4).
+   */
+  terminalStateCount: z.number(),
   unit: z.string(),
   repoConfig: z.array(configFieldSchema),
   providerKinds: z.array(z.string()),
@@ -212,6 +223,13 @@ export const itemFilterSchema = z
     stateId: z.string().optional(),
     /** Matches identifier or title (FR-004). */
     search: z.string().optional(),
+    /**
+     * 004. Return work the lifecycle considers finished as well as work in
+     * flight. Absent means no, so every caller written before this existed keeps
+     * the behaviour it had — and the default request stays bounded, which is the
+     * point of the feature (research.md §2).
+     */
+    includeTerminal: z.boolean().optional(),
   })
   .strict();
 

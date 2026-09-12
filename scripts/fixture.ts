@@ -8,7 +8,7 @@
  *
  * Run directly by Node's native TypeScript support:
  *
- *   node scripts/fixture.ts create   <dir> [--sdlc alt] [--items N] [--prefix ABC] [--force]
+ *   node scripts/fixture.ts create   <dir> [--sdlc alt] [--items N] [--prefix ABC] [--omit-terminal] [--force]
  *   node scripts/fixture.ts package  <dir> [--omit-manifest] [--force]
  *   node scripts/fixture.ts fail     <providerId> <mode> [--dir <path>] [--clear]
  *   node scripts/fixture.ts upgrade  <dir> (--remove-state <id> | --add-state <id>)
@@ -1358,7 +1358,7 @@ function boolFlag(args: Args, name: string): boolean {
 
 const USAGE = [
   'Usage:',
-  '  node scripts/fixture.ts create  <dir> [--sdlc alt] [--items N] [--prefix ABC] [--force]',
+  '  node scripts/fixture.ts create  <dir> [--sdlc alt] [--items N] [--prefix ABC] [--omit-terminal] [--force]',
   '  node scripts/fixture.ts package <dir> [--omit-manifest] [--force]',
   '  node scripts/fixture.ts fail    <providerId> <unreachable|unauthenticated|rate_limited> [--dir <path>] [--clear]',
   '  node scripts/fixture.ts upgrade <dir> (--remove-state <id> | --add-state <id>)',
@@ -1377,6 +1377,22 @@ function commandCreate(args: Args): void {
   }
   const kind: LifecycleKind = sdlcFlag === 'alt' ? 'alt' : 'default';
   const manifest = lifecycleFor(kind);
+
+  // 004, T033 — a lifecycle that never lets work go.
+  //
+  // Nothing else here can produce one, so User Story 2 could not be walked at
+  // all: a package that simply forgets to mark its final state produces a work
+  // item list that grows without bound, silently, and that is the condition the
+  // repositories view now reports.
+  //
+  // The *only* change is dropping the flag. Every state keeps its `maps`, so the
+  // manifest stays valid against rule 8 and the one variable under test is the
+  // one being tested — a fixture that differed in two ways would prove nothing
+  // about either.
+  const omitTerminal = boolFlag(args, 'omit-terminal');
+  if (omitTerminal) {
+    for (const state of manifest.states) delete state.terminal;
+  }
   const prefix = (stringFlag(args, 'prefix') ?? (kind === 'alt' ? 'LAB' : 'DEMO')).toUpperCase();
   if (!/^[A-Z]+$/.test(prefix)) {
     fail(`--prefix must be letters only, so keys match the identity pattern [A-Z]+-[0-9]+; got '${prefix}'`);

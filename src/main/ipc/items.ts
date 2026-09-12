@@ -119,8 +119,14 @@ export function createItemHandlers(deps: ItemHandlerDeps): ItemHandlers {
 /**
  * FR-004's four filters, plus the one rule that is not a filter: an item resting
  * in a state the manifest declares `terminal` has left the active list
- * (data-model.md, FR-001). Naming that state explicitly brings it back, so the
- * items are reachable rather than hidden.
+ * (data-model.md, 001's FR-001).
+ *
+ * **004 gave that rule a way out that an interface can actually reach.** The
+ * original escape — naming the state explicitly — is still here and still works,
+ * but it was unreachable in practice: the list asks with no filter, so terminal
+ * items never arrived, and the state options are built from the items that did.
+ * A terminal state could therefore never be offered as a choice. `includeTerminal`
+ * is the handle that escape hatch was missing.
  */
 function matches(entry: ItemContext, filter: ItemFilter): boolean {
   const { item, repository } = entry;
@@ -129,7 +135,13 @@ function matches(entry: ItemContext, filter: ItemFilter): boolean {
   if (filter.packageId !== undefined && item.packageId !== filter.packageId) return false;
   if (filter.stateId !== undefined && item.stateId !== filter.stateId) return false;
 
-  if (filter.stateId === undefined && isTerminal(repository.definition, entry)) return false;
+  if (
+    filter.includeTerminal !== true &&
+    filter.stateId === undefined &&
+    isTerminal(repository.definition, entry)
+  ) {
+    return false;
+  }
 
   const search = filter.search?.trim().toLowerCase();
   if (search !== undefined && search !== '') {
@@ -142,6 +154,20 @@ function matches(entry: ItemContext, filter: ItemFilter): boolean {
   return true;
 }
 
+/**
+ * Whether the lifecycle considers this item finished (004).
+ *
+ * The two `false` cases are not defensive padding, they are the requirement.
+ * An **unmapped** item has no declared state to consult (FR-015), and a
+ * repository whose **definition failed to load** cannot answer for any of its
+ * items (FR-016). Both resolve to "not finished", which is the answer that keeps
+ * the work visible — the application does not act on what it cannot prove
+ * (Principle X).
+ *
+ * This is the only place the question is asked. `matches` uses it to decide what
+ * to return and `toSummary` uses it to tell the renderer; nothing downstream
+ * evaluates it again (plan.md §Structure Decision).
+ */
 function isTerminal(definition: SdlcDefinition | null, entry: ItemContext): boolean {
   if (definition === null || isUnmapped(entry.item.stateId)) return false;
   return findState(definition, entry.item.stateId)?.terminal === true;
@@ -174,6 +200,9 @@ export function toSummary(entry: ItemContext): WorkItemSummary {
     freshness: item.freshness,
     // Surfaced, not hidden (spec §Edge Cases, "Two providers disagree").
     disagreements: item.disagreements,
+    // 004. Asked of the repository's own definition, on every projection, and
+    // recorded nowhere. The renderer is told; it never works this out itself.
+    terminal: isTerminal(repository.definition, entry),
   };
 }
 

@@ -336,6 +336,10 @@ export function toPackageSummary(pkg: SdlcPackage): SdlcPackageSummary {
     problemField: pkg.problem?.field ?? null,
     problemLine: pkg.problem?.line ?? null,
     stateCount: definition?.states.length ?? 0,
+    // 004. Counted from the loaded definition, never stored, so correcting a
+    // manifest clears whatever the view was saying about it on the next
+    // reconciliation and nothing here has to be invalidated (FR-013).
+    terminalStateCount: (definition?.states ?? []).filter((state) => state.terminal).length,
     unit: definition?.items.unit ?? DEFAULT_UNIT,
     repoConfig: (definition?.repoConfig ?? []).map((field) => ({
       key: field.key,

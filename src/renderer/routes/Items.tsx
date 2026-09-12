@@ -59,6 +59,29 @@ const PARAM_REPOSITORY = 'repository';
 const PARAM_SDLC = 'sdlc';
 const PARAM_STATE = 'state';
 const PARAM_SEARCH = 'q';
+/** 004. The fifth key this list owns. See `FILTER_PARAMS` — it must be in that set. */
+const PARAM_FINISHED = 'finished';
+
+/**
+ * Every query key the **list** owns, and the exact set `writeFilterKeys` clears
+ * before rewriting.
+ *
+ * This is a named constant rather than an inline array because of what happened
+ * in 003: the list rebuilt the whole query string on every filter write and
+ * silently deleted the detail pane's `?tab=`. The fix was to touch only the
+ * list's own keys — which works right up until someone adds a sixth key and
+ * wires it to a control without adding it here. Then it survives filter changes
+ * by accident and breaks the first time this code is reordered.
+ *
+ * **Adding a list filter means adding it to this array.**
+ */
+const FILTER_PARAMS = [
+  PARAM_REPOSITORY,
+  PARAM_SDLC,
+  PARAM_STATE,
+  PARAM_SEARCH,
+  PARAM_FINISHED,
+] as const;
 
 const REPOSITORIES_ROUTE = '/repositories';
 
@@ -117,19 +140,33 @@ export function Items({ selectedKey = null }: ItemsProps): ReactElement {
   const headingId = useId();
   const [params, setParams] = useSearchParams();
 
-  const items = useItems();
-  const repositories = useRepositories();
-  const refresh = useRefresh();
-
+  // The filter is read before the queries, because since 004 one of its values
+  // decides what the item query asks for.
   const filter = useMemo<ItemFilterValue>(
     () => ({
       repositoryId: params.get(PARAM_REPOSITORY) ?? '',
       packageId: params.get(PARAM_SDLC) ?? '',
       stateId: params.get(PARAM_STATE) ?? '',
       search: params.get(PARAM_SEARCH) ?? '',
+      // Present and '1' means yes; anything else, including absent, means no.
+      // The default is the quieter one, and an address that says nothing about
+      // finished work gets the bounded list (FR-007).
+      finished: params.get(PARAM_FINISHED) === '1',
     }),
     [params],
   );
+
+  // 004. Only the request that wants finished work asks for it, so the default
+  // payload stays bounded — finished work only accumulates, and shipping all of
+  // it on every reconciliation in order to hide it would re-create the problem
+  // this feature exists to solve (research.md §2).
+  //
+  // `undefined` rather than an empty object when off, deliberately: it keeps the
+  // query key byte-identical to the one `CollapsedRail` subscribes to, so the two
+  // share a single fetch in the ordinary case.
+  const items = useItems(filter.finished ? { includeTerminal: true } : undefined);
+  const repositories = useRepositories();
+  const refresh = useRefresh();
 
   /**
    * 003 — the list writes **only its own four keys**, and leaves the rest of the
@@ -154,7 +191,7 @@ export function Items({ selectedKey = null }: ItemsProps): ReactElement {
   const writeFilterKeys = useCallback(
     (mutate: (into: URLSearchParams) => void) => {
       const updated = new URLSearchParams(params);
-      for (const key of [PARAM_REPOSITORY, PARAM_SDLC, PARAM_STATE, PARAM_SEARCH]) {
+      for (const key of FILTER_PARAMS) {
         updated.delete(key);
       }
       mutate(updated);
@@ -172,6 +209,9 @@ export function Items({ selectedKey = null }: ItemsProps): ReactElement {
         if (next.packageId !== '') updated.set(PARAM_SDLC, next.packageId);
         if (next.stateId !== '') updated.set(PARAM_STATE, next.stateId);
         if (next.search !== '') updated.set(PARAM_SEARCH, next.search);
+        // Absent rather than `finished=0` when off, so the ordinary view has an
+        // ordinary address and a shared link carries no dead weight.
+        if (next.finished) updated.set(PARAM_FINISHED, '1');
       });
     },
     [writeFilterKeys],
@@ -181,6 +221,29 @@ export function Items({ selectedKey = null }: ItemsProps): ReactElement {
   const clearFilter = useCallback(() => {
     writeFilterKeys(() => undefined);
   }, [writeFilterKeys]);
+
+  /**
+   * 004 — the query string a row's link carries, so selecting an item does not
+   * silently rearrange the list you selected it from.
+   *
+   * Only the keys the list owns travel. The detail's `?tab=` is deliberately
+   * dropped: a tab belongs to the item being read, and inheriting the previous
+   * item's tab would be a claim about a lifecycle this one may not share.
+   *
+   * This is the mirror of `writeFilterKeys`, and between them they state the
+   * whole rule: **the list writes only its own keys, and carries only its own
+   * keys.** 003 got the first half right and shipped the second half broken,
+   * because a `<Link>` with a string `to` discards a query string quietly.
+   */
+  const listSearch = useMemo(() => {
+    const kept = new URLSearchParams();
+    for (const key of FILTER_PARAMS) {
+      const value = params.get(key);
+      if (value !== null) kept.set(key, value);
+    }
+    const text = kept.toString();
+    return text === '' ? '' : `?${text}`;
+  }, [params]);
 
   const all = useMemo(() => items.data ?? [], [items.data]);
   const visible = useMemo(
@@ -281,6 +344,25 @@ export function Items({ selectedKey = null }: ItemsProps): ReactElement {
 
   const noRepositoriesRegistered = repositories.isSuccess && repositories.data.length === 0;
 
+  /**
+   * 004 — the filter bar is withheld only when it could do nothing useful.
+   *
+   * It used to be withheld whenever the list was empty, which was right while an
+   * empty list meant "there is nothing here". Since 004 an empty list is often
+   * empty *because* finished work is hidden — and the control that reveals it
+   * lives in this bar. Suppressing it there produced a genuine dead end: the
+   * empty state told the engineer to show finished work while removing the only
+   * control that could, leaving a hand-edited address as the sole way out, which
+   * SC-001 explicitly promises against.
+   *
+   * Three states still withhold it, because in each there is nothing to reveal
+   * and a row of empty selects would be noise: before the first answer arrives,
+   * after a failed load, and on the genuine first run with nothing registered.
+   */
+  const offerFilters =
+    isFiltered(filter) ||
+    (!listPending && !items.isError && !(all.length === 0 && noRepositoriesRegistered));
+
   let content: ReactElement;
 
   if (listPending && !listTimedOut) {
@@ -332,7 +414,15 @@ export function Items({ selectedKey = null }: ItemsProps): ReactElement {
       <EmptyState
         title="No active work items"
         body="Your registered repositories reported nothing in flight. Items appear here as soon as their system of record shows them."
-        hint="If you expected something here, check the repository's configuration and its provider status."
+        hint={
+          // 004. "Nothing in flight" and "nothing here" are different facts, and
+          // an engineer who cannot tell them apart may conclude their repository
+          // is broken. This does not claim finished work exists — it cannot know
+          // that without asking for it (FR-002) — it says where to look.
+          filter.finished
+            ? "If you expected something here, check the repository's configuration and its provider status."
+            : 'Work that its lifecycle considers finished is not listed here. Show finished work to see whether these repositories have any, or check the repository’s configuration and its provider status.'
+        }
         action={{ label: 'Review repositories', to: REPOSITORIES_ROUTE }}
       />
     );
@@ -340,7 +430,10 @@ export function Items({ selectedKey = null }: ItemsProps): ReactElement {
     content = (
       <EmptyState
         title="No items match these filters"
-        body={`None of the ${all.length} active items match the current repository, SDLC, state, and search filters.`}
+        // 004. `all` includes finished work whenever it is being shown, so the
+        // old wording — "none of the N active items" — counted items the same
+        // feature insists are not active.
+        body={`None of the ${all.length} ${filter.finished ? 'listed' : 'active'} items match the current repository, SDLC, state, and search filters.`}
         hint="Clear the filters to see everything again."
       />
     );
@@ -352,6 +445,7 @@ export function Items({ selectedKey = null }: ItemsProps): ReactElement {
             key={item.key}
             item={item}
             selected={item.key === selectedKey}
+            search={listSearch}
             onRetry={onRetry}
             retrying={retryingKey === item.key && !retryTimedOut}
             retryProblem={retryProblemFor(item.key)}
@@ -375,7 +469,7 @@ export function Items({ selectedKey = null }: ItemsProps): ReactElement {
         )}
       </div>
 
-      {all.length === 0 && !isFiltered(filter) ? null : (
+      {offerFilters ? (
         <ItemFilters
           repositories={repositoryOptions}
           sdlcs={sdlcOptions}
@@ -384,7 +478,7 @@ export function Items({ selectedKey = null }: ItemsProps): ReactElement {
           onChange={setFilter}
           onClear={clearFilter}
         />
-      )}
+      ) : null}
 
       {/* FR-015. The detail keeps showing what is being read even when the
           filters no longer list it, and a list that silently dropped the row

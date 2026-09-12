@@ -8,6 +8,12 @@ persistent list down the left, the selected one's detail beside it, both at once
 collapses when an artifact needs the width, and still says how many items are waiting on you while
 collapsed.
 
+Work that its own lifecycle declares finished leaves that list, so what you are looking at stays the
+work that is still moving. Nothing is deleted and nothing is unreachable: **Show finished work**
+puts it back, marked as finished and ordered below everything still waiting on you. Which state
+counts as finished is each lifecycle's own declaration, never this application's guess — a lifecycle
+that declares none keeps every item it has ever had, and the repositories view says so.
+
 **It observes. It does not act.** v1.0 is read-only with respect to every system of record: it
 performs no state transition, no gate approval, no check retry. That is not restraint in the use of
 a capability — the capability is absent. Neither the provider interface nor the bridge between the
@@ -40,8 +46,9 @@ npm run fixture:create -- ./tmp/demo
 
 Creates a repository running a filesystem-backed lifecycle: markdown as the system of record, six
 states, gates of all four kinds, and items seeded across them — one awaiting your input, one with a
-failed gate, one with a gate that has never been evaluated. Register `./tmp/demo` from the
-repositories view.
+failed gate, one with a gate that has never been evaluated, and one already finished, which is why
+the list shows seven of the eight until you tick **Show finished work**. Register `./tmp/demo` from
+the repositories view.
 
 For a second, deliberately different lifecycle:
 

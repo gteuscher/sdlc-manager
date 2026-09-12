@@ -45,6 +45,8 @@ const ALMANAC: SdlcPackageSummary = {
   problemField: null,
   problemLine: null,
   stateCount: 5,
+  // 004. A healthy lifecycle: one of its five states is final.
+  terminalStateCount: 1,
   unit: 'entry',
   repoConfig: [
     { key: 'providers.almanac.ledgerKey', title: 'Almanac ledger key', type: 'string', required: true },
@@ -78,6 +80,8 @@ const ORRERY: SdlcPackageSummary = {
   problemField: null,
   problemLine: null,
   stateCount: 3,
+  // 004. Likewise, one final state of three.
+  terminalStateCount: 1,
   unit: 'observation',
   repoConfig: [
     { key: 'providers.orrery.epoch', title: 'Orrery epoch', type: 'string', required: true },
@@ -97,9 +101,53 @@ const SUNDIAL: SdlcPackageSummary = {
   problemField: null,
   problemLine: null,
   stateCount: 0,
+  // 004. No manifest loaded, so there are no states to count either way.
+  terminalStateCount: 0,
   unit: 'item',
   repoConfig: [],
   providerKinds: [],
+};
+
+/**
+ * 004, FR-010. A lifecycle that declares no final state at all. It is a perfectly
+ * well-formed manifest — every state resolves, every provider is declared — and
+ * by its own definition no work following it is ever finished.
+ */
+const TREADMILL: SdlcPackageSummary = {
+  id: 'treadmill',
+  name: 'Treadmill lifecycle',
+  version: '1.4.0',
+  path: '/packages/treadmill',
+  contractVersion: 1,
+  supported: true,
+  problem: null,
+  problemField: null,
+  problemLine: null,
+  stateCount: 4,
+  terminalStateCount: 0,
+  unit: 'errand',
+  repoConfig: [
+    { key: 'providers.treadmill.queue', title: 'Treadmill queue', type: 'string', required: true },
+  ],
+  providerKinds: ['queue'],
+};
+
+/** 004, FR-014. The mirror: every state it declares is final. */
+const MAYFLY: SdlcPackageSummary = {
+  id: 'mayfly',
+  name: 'Mayfly lifecycle',
+  version: '0.3.0',
+  path: '/packages/mayfly',
+  contractVersion: 1,
+  supported: true,
+  problem: null,
+  problemField: null,
+  problemLine: null,
+  stateCount: 2,
+  terminalStateCount: 2,
+  unit: 'sighting',
+  repoConfig: [],
+  providerKinds: ['almanac-files'],
 };
 
 function health(overrides: Partial<ProviderHealth> & { providerId: string }): ProviderHealth {
@@ -191,6 +239,18 @@ function LocationProbe(): ReactElement {
 /** The group for one SDLC definition, by the name the package gave itself. */
 function group(name: string): ReturnType<typeof within> {
   return within(screen.getByRole('region', { name }));
+}
+
+/** 004. The installed-packages section, where package-level conditions are reported. */
+function installedPackages(): ReturnType<typeof within> {
+  return within(screen.getByRole('region', { name: /installed SDLC packages/i }));
+}
+
+/** 004. The single listed entry for one package, so a report can be pinned to it. */
+function packageEntry(name: string): HTMLElement {
+  const entry = installedPackages().getByText(name).closest('li');
+  if (entry === null) throw new Error(`${name} is not listed among the installed packages.`);
+  return entry;
 }
 
 beforeEach(() => {
@@ -664,6 +724,131 @@ describe('the repositories view', () => {
     expect(screen.getByText(/no longer exists/i)).toBeDefined();
     // A neighbour's missing path costs that repository only.
     expect(screen.getByRole('heading', { name: 'Ledger' })).toBeDefined();
+  });
+
+  // ── 004, User Story 2: a lifecycle that can never let work go ─────────────
+
+  it('reports a lifecycle declaring no final state, naming it and saying what follows', async () => {
+    mount(populated({ listPackages: () => Promise.resolve([ALMANAC, TREADMILL, SUNDIAL]) }));
+
+    await screen.findByText(TREADMILL.name);
+    const entry = within(packageEntry(TREADMILL.name));
+
+    // FR-010: the condition belongs to the package, so the report names it.
+    const report = entry.getByText(/never leave the active list/i);
+    expect(report.textContent).toContain(TREADMILL.name);
+
+    // FR-011: the consequence, and where the correction belongs — in the
+    // package, not here. Nothing in this application can supply a declaration
+    // the manifest does not make, and offering to would be a lie.
+    expect(report.textContent).toMatch(/in the package itself/i);
+    expect(report.textContent).toMatch(/cannot supply it/i);
+
+    // Announced rather than merely seen, and legible without colour.
+    expect(report.closest('p')?.getAttribute('role')).toBe('status');
+    expect(entry.getByText('Never finishes')).toBeDefined();
+
+    // Against the package it belongs to, and no other.
+    const healthy = within(packageEntry(ALMANAC.name));
+    expect(healthy.queryByText(/never leave the active list/i)).toBeNull();
+  });
+
+  it('reports the mirror — a lifecycle whose every state is final — on the same terms', async () => {
+    mount(populated({ listPackages: () => Promise.resolve([ALMANAC, MAYFLY]) }));
+
+    await screen.findByText(MAYFLY.name);
+    const entry = within(packageEntry(MAYFLY.name));
+
+    // FR-014: reported like FR-010, because it is the same defect seen from the
+    // other end — a lifecycle that finishes work the instant it appears.
+    const report = entry.getByText(/never show as active/i);
+    expect(report.textContent).toContain(MAYFLY.name);
+    expect(report.textContent).toMatch(/the package is marking more states terminal/i);
+
+    expect(report.closest('p')?.getAttribute('role')).toBe('status');
+    expect(entry.getByText('Finishes instantly')).toBeDefined();
+  });
+
+  it('reports such a lifecycle without refusing it: still usable, and still registrable', async () => {
+    const attempts: unknown[] = [];
+    mount(
+      populated({
+        listPackages: () => Promise.resolve([ALMANAC, TREADMILL, SUNDIAL]),
+        registerRepository: (input) => {
+          attempts.push(input);
+          return Promise.resolve({ ok: true as const, value: LEDGER });
+        },
+      }),
+    );
+
+    await screen.findByText(TREADMILL.name);
+    const entry = within(packageEntry(TREADMILL.name));
+
+    // FR-012: it is listed, and listed as usable. The report is a report.
+    expect(entry.getByText('Usable')).toBeDefined();
+    expect(entry.queryByText('Unsupported')).toBeNull();
+
+    // It carries no problem, and is not given the unsupported treatment: that
+    // one is an alert saying no repository can be associated with the package.
+    expect(entry.queryByRole('alert')).toBeNull();
+    expect(entry.queryByText(/no repository can be associated with it/i)).toBeNull();
+    expect(entry.queryByText(/never guessed from its documentation/i)).toBeNull();
+
+    // And it describes itself like any other usable package.
+    expect(entry.getByText(/4 declared states/i)).toBeDefined();
+
+    // Still offered for registration, and not marked as a bad choice.
+    const select = screen.getByLabelText('SDLC package') as HTMLSelectElement;
+    const option = within(select).getByRole('option', { name: /Treadmill lifecycle/i });
+    expect(option.textContent).not.toMatch(/unsupported/i);
+
+    await userEvent.type(screen.getByLabelText(/^name$/i), 'Treadmill');
+    await userEvent.type(screen.getByLabelText(/path on this machine/i), '/work/treadmill');
+    await userEvent.selectOptions(select, 'treadmill');
+
+    expect(select.getAttribute('aria-invalid')).toBe('false');
+    expect(screen.queryByText(/Treadmill lifecycle is unsupported/i)).toBeNull();
+
+    // The settings it declares are generated as they are for any other package.
+    await userEvent.type(screen.getByLabelText(/Treadmill queue/i), 'nightly');
+
+    const submit = screen.getByRole('button', { name: /register repository/i });
+    expect((submit as HTMLButtonElement).disabled).toBe(false);
+    await userEvent.click(submit);
+
+    // The registration goes through: the work is tracked, and the manifest is
+    // the engineer's to fix, in their own time.
+    await waitFor(() =>
+      expect(attempts).toEqual([
+        {
+          name: 'Treadmill',
+          path: '/work/treadmill',
+          packageId: 'treadmill',
+          config: { 'providers.treadmill.queue': 'nightly' },
+        },
+      ]),
+    );
+  });
+
+  it('says nothing at all about a lifecycle that both starts and finishes work', async () => {
+    // ALMANAC and ORRERY each declare one final state among several, and SUNDIAL
+    // declares none at all because nothing of it was loaded.
+    mount(populated());
+
+    await screen.findByRole('heading', { name: ALMANAC.name });
+    const packages = installedPackages();
+
+    // The report must stay rare enough to be read. A tag on every package is
+    // noise, and noise is how a real condition goes unnoticed.
+    expect(packages.queryByText('Never finishes')).toBeNull();
+    expect(packages.queryByText('Finishes instantly')).toBeNull();
+    expect(packages.queryByText(/never leave the active list/i)).toBeNull();
+    expect(packages.queryByText(/never show as active/i)).toBeNull();
+
+    // Nothing is announced at all — including about the unsupported package,
+    // whose zero final states are the absence of a manifest and not a claim
+    // about how its lifecycle behaves.
+    expect(packages.queryByRole('status')).toBeNull();
   });
 
   it('has no detectable accessibility violations', async () => {

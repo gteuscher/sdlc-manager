@@ -156,6 +156,13 @@ function comparable(items: readonly WorkItemSummary[]) {
       sdlcName: item.sdlcName,
       unit: item.unit,
       disagreements: item.disagreements,
+      // T008 (004). Finishedness is derived from the loaded definition on every
+      // projection and written down nowhere, so a cache wiped and rebuilt from
+      // the system of record must reproduce it exactly. This is the one gate
+      // that would notice if someone ever persisted it: a stored copy would
+      // survive the wipe and could then disagree with the definition that owns
+      // it (Principle VI).
+      terminal: item.terminal,
     }));
 }
 

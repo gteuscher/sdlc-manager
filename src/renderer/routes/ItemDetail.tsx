@@ -252,9 +252,28 @@ export default function ItemDetail(): ReactElement {
     };
   }, [pending]);
 
+  /**
+   * 004 — going back to the list keeps the list as it was.
+   *
+   * The same defect as the row link, in the other direction: `to={ITEMS_ROUTE}`
+   * is a bare string, so returning from an item discarded every filter, the
+   * search, and whether finished work was shown. It matters most at narrow
+   * widths, where this link is the *only* way back and the engineer would arrive
+   * at a list rearranged behind their back.
+   *
+   * Everything survives except this pane's own `?tab=`, which describes an item
+   * that is no longer open and would be dead weight in a shared address.
+   */
+  const backSearch = (() => {
+    const kept = new URLSearchParams(search);
+    kept.delete(PARAM_TAB);
+    const text = kept.toString();
+    return text === '' ? '' : `?${text}`;
+  })();
+
   const back = (
     <p className="detail__back">
-      <Link to={ITEMS_ROUTE}>&larr; All work items</Link>
+      <Link to={{ pathname: ITEMS_ROUTE, search: backSearch }}>&larr; All work items</Link>
     </p>
   );
 

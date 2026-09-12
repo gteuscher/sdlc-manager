@@ -2,6 +2,12 @@
  * T007–T012, T021–T024, T030–T032, T035, T037, T039 — the workbench as an
  * *arrangement*, which is the only thing this file is about.
  *
+ * **004 added a fifth key to the list's query string**, and its T013 and T034–T036
+ * live at the bottom of this file for the same reason 003's did: including
+ * finished work is a question about the list, and every claim worth making about
+ * it is a claim about what the *other* pane does while it is asked. (Both features
+ * number a task T035; the 004 block says which is which at each test.)
+ *
  * Each pane already has its own suite: `ItemList.test.tsx` proves what the list
  * shows and `StateTabs.test.tsx` proves what the detail shows, and neither of
  * them changed when the two became panes of one view. What no pane's suite can
@@ -45,6 +51,7 @@ import 'vitest-axe/extend-expect';
 
 import type { ReactElement } from 'react';
 
+import type { ItemFilter } from '@core/ipc/schema';
 import type {
   AttentionSignal,
   StateView,
@@ -88,6 +95,8 @@ function foundryItem(overrides: Partial<WorkItemSummary> & { key: string }): Wor
     reconciledAt: RECONCILED,
     freshness: 'fresh',
     disagreements: [],
+    // 004. Active unless a case says otherwise.
+    terminal: false,
     ...overrides,
   };
 }
@@ -156,11 +165,62 @@ function detailFor(summary: WorkItemSummary): WorkItemDetail {
   };
 }
 
+/**
+ * The same fleet with one finished item in each lifecycle — each resting in the
+ * state its *own* definition declares terminal (`detailFor` makes the last
+ * declared state terminal, so Stamping and Lading are the two).
+ *
+ * `FDY-3` is dropped for these cases rather than reused. It sits in Stamping
+ * carrying `terminal: false`, which is a contradiction the four-item fleet gets
+ * away with only because nothing there reads the flag; a list that both hides and
+ * marks finished work reads it, and an active item resting in a terminal state
+ * would be asserting something no repository can report.
+ */
+function fleetWithFinished(): WorkItemSummary[] {
+  return [
+    ...fleet().filter((item) => item.key !== 'FDY-3'),
+    foundryItem({
+      key: 'FDY-8',
+      title: 'Crate the finished billet',
+      stateId: 'stamping',
+      stateName: 'Stamping',
+      rawState: 'stamping',
+      terminal: true,
+    }),
+    harbourItem({
+      key: 'HRB-9',
+      title: 'Sign off the discharged consignment',
+      stateId: 'lading',
+      stateName: 'Lading',
+      rawState: 'lading',
+      terminal: true,
+    }),
+  ];
+}
+
 /** A bridge serving the whole fleet, and whichever of it is asked for by key. */
 function fleetBridge(items: WorkItemSummary[] = fleet()): BridgeStub {
-  return createBridgeStub({
-    listItems: () => Promise.resolve(items),
+  // Declared before the overrides so they can record their own calls. The base
+  // stub tracks the methods it implements, but an override replaces the tracking
+  // along with the answer — and both of the methods this file cares about are
+  // overridden, so a count taken without this line is a count of nothing. The
+  // assertions below that read it check that it is non-zero before relying on it.
+  const stub: BridgeStub = createBridgeStub({
+    // 004. The main process withholds finished work unless it is asked for, and
+    // every claim below about `?finished=1` depends on the thing being talked to
+    // behaving that way — a stub that served finished work regardless would pass
+    // whether or not the flag ever reached the bridge. The main process's other
+    // escape, that naming a `stateId` returns terminal items resting in it, is
+    // deliberately not reproduced: this list filters by state locally and never
+    // sends one, so honouring it here would be answering a question nothing asks.
+    listItems: (filter?: ItemFilter) => {
+      stub.calls.push('listItems');
+      return Promise.resolve(
+        items.filter((item) => filter?.includeTerminal === true || !item.terminal),
+      );
+    },
     getItem: (key: string) => {
+      stub.calls.push('getItem');
       const found = items.find((candidate) => candidate.key === key);
       if (found === undefined) {
         return Promise.resolve({
@@ -172,6 +232,7 @@ function fleetBridge(items: WorkItemSummary[] = fleet()): BridgeStub {
       return Promise.resolve({ ok: true as const, value: detailFor(found) });
     },
   });
+  return stub;
 }
 
 // ── Harness ─────────────────────────────────────────────────────────────────
@@ -259,6 +320,20 @@ function rowKeys(): string[] {
   return within(listPane())
     .getAllByRole('listitem')
     .map((row) => within(row).getByRole('link').textContent ?? '');
+}
+
+/**
+ * 004's control, addressed by what it says rather than by class.
+ *
+ * Re-queried on every call rather than captured once: including finished work
+ * changes which list is being asked for, so the filter bar is unmounted for as
+ * long as the new answer is pending and a held reference would be a detached node
+ * by the time the rows come back.
+ */
+function finishedToggle(): HTMLInputElement {
+  return within(listPane()).getByRole('checkbox', {
+    name: /^show finished work$/i,
+  }) as HTMLInputElement;
 }
 
 async function open(key: string): Promise<void> {
@@ -684,6 +759,230 @@ describe('the two-pane workbench', () => {
     await userEvent.click(within(listPane()).getByRole('button', { name: /clear filters/i }));
     expect(url()).toBe('/items/FDY-2?tab=smelting');
     expect(openTab()?.textContent).toContain('Smelting');
+  });
+
+  // ── 004: bounding the active list ─────────────────────────────────────────
+
+  /**
+   * 004's T013 — FR-005 and SC-008.
+   *
+   * 003's FR-014 rule ("filtering is a question about the list; the open item is
+   * not part of the question") applied to a control that did not exist when it
+   * was written. Including finished work changes which list is fetched, and the
+   * obvious way to implement that — invalidate the items and let everything
+   * downstream settle — takes the detail with it. So the detail is asserted twice
+   * over: it still shows the same item, and it was never asked again.
+   */
+  it('leaves the detail showing the same item while finished work is included and excluded', async () => {
+    const stub = fleetBridge(fleetWithFinished());
+    mount(stub, '/items/FDY-2');
+
+    await within(listPane()).findByText('FDY-2');
+    const reads = () => stub.calls.filter((call) => call === 'getItem').length;
+    const before = reads();
+    // The counter is load-bearing for the last assertion in each half, so it is
+    // checked for being a counter at all: a stub that recorded nothing would make
+    // "not re-fetched" true of every implementation, including a wrong one.
+    expect(before).toBeGreaterThan(0);
+
+    // Excluded by default, and the detail pane is showing an active item.
+    expect(within(listPane()).queryByText('FDY-8')).toBeNull();
+    expect(within(detailPane()).getByText('Temper the flywheel casting')).toBeDefined();
+
+    await userEvent.click(finishedToggle());
+
+    // The list widened...
+    expect(await within(listPane()).findByText('FDY-8')).toBeDefined();
+    expect(within(listPane()).getByText('HRB-9')).toBeDefined();
+    expect(url()).toBe('/items/FDY-2?finished=1');
+    // ...and the detail is on the same item, unread a second time.
+    expect(within(detailPane()).getByText('Temper the flywheel casting')).toBeDefined();
+    expect(reads()).toBe(before);
+
+    await userEvent.click(finishedToggle());
+
+    // And back again, which is the half that a refetch-on-change would break
+    // just as thoroughly: the flag leaves the address entirely rather than
+    // becoming `finished=0`, so the ordinary view has an ordinary URL.
+    await within(listPane()).findByText('FDY-2');
+    expect(within(listPane()).queryByText('FDY-8')).toBeNull();
+    expect(url()).toBe('/items/FDY-2');
+    expect(within(detailPane()).getByText('Temper the flywheel casting')).toBeDefined();
+    expect(reads()).toBe(before);
+  });
+
+  /**
+   * 004's T034 — FR-007, and Story 3's whole point: a fifth piece of view state
+   * that did not travel in the address would be the exception that starts eroding
+   * the rule 003 established.
+   */
+  it('restores the finished flag, a filter, a search and a selection together from one URL', async () => {
+    mount(fleetBridge(fleetWithFinished()), '/items/HRB-9?finished=1&repository=repo-harbour&q=discharged');
+
+    await within(listPane()).findByText('HRB-9');
+
+    const filters = within(listPane());
+    expect(finishedToggle().checked).toBe(true);
+    expect((filters.getByLabelText(/^repository$/i) as HTMLSelectElement).value).toBe('repo-harbour');
+    expect((filters.getByLabelText(/^search$/i) as HTMLInputElement).value).toBe('discharged');
+
+    // All four at once: the flag admitted a finished item that the default view
+    // withholds, the repository filter and the search narrowed it to one, and the
+    // selection opened it. Any one of the four missing changes this list.
+    expect(rowKeys()).toEqual(['HRB-9Sign off the discharged consignment']);
+    expect(within(detailPane()).getByText('Sign off the discharged consignment')).toBeDefined();
+    // And the row that came back is the finished one, marked as such — the flag
+    // was honoured rather than the search happening to find something active.
+    expect(within(listPane()).getByText('Finished')).toBeDefined();
+  });
+
+  /**
+   * 004's T035 — Story 3, scenario 2. Not 003's T035, which is the narrow-window
+   * case further down.
+   */
+  it('excludes finished work from an address that does not mention it', async () => {
+    mount(fleetBridge(fleetWithFinished()), '/items/FDY-2');
+
+    await within(listPane()).findByText('FDY-2');
+
+    // The quieter default, for someone who has never heard of this feature: the
+    // address says nothing, so the list is the bounded one.
+    expect(rowKeys().map((row) => row.slice(0, 5))).toEqual(['FDY-1', 'HRB-7', 'FDY-2']);
+    expect(within(listPane()).queryByText('FDY-8')).toBeNull();
+    expect(within(listPane()).queryByText('HRB-9')).toBeNull();
+    expect(within(listPane()).queryByText('Finished')).toBeNull();
+
+    // And the control agrees with the address rather than with a remembered
+    // preference — a checkbox reading "on" over a list with nothing finished in
+    // it would be the same lie in the other direction.
+    expect(finishedToggle().checked).toBe(false);
+  });
+
+  /**
+   * Quickstart B7's fourth write path, and the defect it caught.
+   *
+   * The list writes its query string from three controls, and **navigates away
+   * from it by a fourth** — the row link. That link was `to="/items/KEY"`, a bare
+   * string, and a string `to` discards the whole query string: selecting a row
+   * silently cleared every filter, the search, and whether finished work was
+   * shown. The list rearranged itself under the cursor at the exact moment the
+   * engineer reached into it, which is 003's W2 promise ("one interaction to the
+   * next item, and the list is where you left it") broken by the feature that
+   * made the loss visible.
+   *
+   * It is the same defect as 003's, through the other door: 003 fixed the list
+   * clobbering the detail's key and nobody checked the detail *link* clobbering
+   * the list's. Both directions are now asserted — this test for going in, and
+   * the one below it for coming back out.
+   */
+  it('keeps the list exactly as it was when a row is selected', async () => {
+    mount(
+      fleetBridge(fleetWithFinished()),
+      '/?finished=1&repository=repo-foundry&q=the',
+    );
+
+    await within(listPane()).findByText('FDY-1');
+    const before = rowKeys();
+    // The arrangement is worth something: a filtered list including finished work.
+    expect(before.length).toBeGreaterThan(1);
+    expect(within(listPane()).getAllByText('Finished').length).toBeGreaterThan(0);
+
+    await open('FDY-8');
+
+    // The detail opened...
+    expect(within(detailPane()).getByText('Crate the finished billet')).toBeDefined();
+    // ...and nothing about the list moved. Not the rows, not the order, not the
+    // control, not the address.
+    expect(rowKeys()).toEqual(before);
+    expect(finishedToggle().checked).toBe(true);
+    expect(url()).toContain('finished=1');
+    expect(url()).toContain('repository=repo-foundry');
+    expect(url()).toContain('q=the');
+  });
+
+  it('keeps the list exactly as it was when the detail’s back link is followed', async () => {
+    mount(
+      fleetBridge(fleetWithFinished()),
+      '/items/FDY-8?finished=1&repository=repo-foundry&tab=smelting',
+    );
+
+    await within(listPane()).findByText('FDY-8');
+    const before = rowKeys();
+
+    await userEvent.click(within(detailPane()).getByRole('link', { name: /all work items/i }));
+
+    // At narrow widths this link is the only way back, so a list rearranged on
+    // the way out would be the engineer's only remaining view of their work.
+    expect(rowKeys()).toEqual(before);
+    expect(finishedToggle().checked).toBe(true);
+    expect(url()).toContain('finished=1');
+    expect(url()).toContain('repository=repo-foundry');
+    // The tab described an item that is no longer open, and does not travel.
+    expect(url()).not.toContain('tab=');
+  });
+
+  /**
+   * 004's T036, and quickstart B7 — the collision 003 shipped a defect into,
+   * asserted against the fifth key.
+   *
+   * The list writes its own keys by deleting them all and setting the survivors,
+   * which is what stopped it erasing the detail's `?tab=`. A new list-owned key
+   * that is wired to a control but left out of that set appears to work: it
+   * survives a filter change by accident, and is silently dropped the first time
+   * the write path is reordered. So both directions are asserted, and all three
+   * of the list's write paths are exercised — the select, the search field, and
+   * the clear button — because the clear button is the one whose *correct*
+   * behaviour differs. It must take the finished flag with it: including finished
+   * work is a departure from the default view, and a control promising to restore
+   * the ordinary list that left it wider would be the one filter escaping the one
+   * control that undoes filters.
+   *
+   * The open tab is asserted by which tab is selected, not only by the URL. A tab
+   * strip that reverted to the current state while `?tab=` stayed in the address
+   * is exactly the shape of the 003 defect, and a URL-only assertion would have
+   * been true throughout it.
+   */
+  it('lets the finished flag and the open item’s tab share one URL without either erasing the other', async () => {
+    mount(fleetBridge(fleetWithFinished()), '/items/FDY-2?finished=1&tab=smelting');
+
+    await within(listPane()).findByText('FDY-8');
+    const openTab = () =>
+      within(detailPane())
+        .getAllByRole('tab')
+        .find((tab) => tab.getAttribute('aria-selected') === 'true');
+
+    // Smelting is behind FDY-2, so a tab that reverted to the current state would
+    // be visibly a different tab rather than a coincidence.
+    expect(openTab()?.textContent).toContain('Smelting');
+    expect(finishedToggle().checked).toBe(true);
+
+    // Write path one: the state select.
+    await userEvent.selectOptions(within(listPane()).getByLabelText(/^state$/i), 'tempering');
+    expect(url()).toContain('tab=smelting');
+    expect(url()).toContain('state=tempering');
+    expect(url()).toContain('finished=1');
+    expect(openTab()?.textContent).toContain('Smelting');
+    expect(finishedToggle().checked).toBe(true);
+
+    // Write path two: a keystroke in the search box, which rewrites the query
+    // string on every character and is the path an engineer hits first.
+    await userEvent.type(within(listPane()).getByLabelText(/^search$/i), 'Temper');
+    expect(url()).toContain('tab=smelting');
+    expect(url()).toContain('q=Temper');
+    expect(url()).toContain('finished=1');
+    expect(openTab()?.textContent).toContain('Smelting');
+    expect(finishedToggle().checked).toBe(true);
+
+    // Write path three: clearing. The finished flag goes with the other filters,
+    // and the arrangement — which is not a filter — does not.
+    await userEvent.click(within(listPane()).getByRole('button', { name: /clear filters/i }));
+
+    await within(listPane()).findByText('FDY-1');
+    expect(url()).toBe('/items/FDY-2?tab=smelting');
+    expect(openTab()?.textContent).toContain('Smelting');
+    expect(finishedToggle().checked).toBe(false);
+    expect(within(listPane()).queryByText('FDY-8')).toBeNull();
+    expect(within(detailPane()).getByText('Temper the flywheel casting')).toBeDefined();
   });
 
   // ── Degrading honestly ────────────────────────────────────────────────────

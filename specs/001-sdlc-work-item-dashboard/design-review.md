@@ -366,3 +366,204 @@ proven against a negative control.
 The thing most worth watching is not in the code yet: `Workbench.tsx` is small and
 correct *today*. Its failure mode is accretion, one reasonable-looking addition at
 a time, and the boundary test in this section is the only thing that will notice.
+
+---
+
+# Appendix: Feature 004, Bounding the Active List (T044)
+
+**Feature**: [004 spec.md](../004-bound-active-list/spec.md) · **Date**: 2026-09-12
+
+The same self-attested gate, re-run over a feature whose entire subject is a
+*lifecycle property*. 004's tasks.md poses the two questions this review has to
+answer:
+
+> did anything end up storing finishedness, and did the renderer stay a consumer
+> of the answer rather than a second judge of it?
+
+## VI. Storage Follows the SDLC — the load-bearing one here
+
+**What the principle asks**: nothing competes with the system of record; any
+cache is non-authoritative, deletable, and rebuildable.
+
+**The claim under review**: finishedness is derived on every read from a
+definition already loaded, and written down nowhere.
+
+**Evidence, and it is machine-checked rather than attested.** `terminal` is
+computed in `toSummary` from the repository's own definition and appears in no
+cache, no config file, and no persisted record. What makes this more than a
+promise is where the test went: `comparable()` in `cache.rebuild.test.ts` — the
+projection gate 4 compares before and after a full cache wipe. A stored `terminal`
+would survive the wipe and could then disagree with the definition that owns it,
+which is exactly the failure this principle exists to prevent, and exactly what
+that test would catch.
+
+**Verdict: pass**, and unusually well evidenced for a design-judgment principle.
+This is a case where a self-attested claim was successfully turned into a
+machine-enforced one, which is what the constitution asks for whenever it is
+possible.
+
+Two consequences fall out of deriving rather than recording, and both are
+requirements met for free rather than implemented:
+
+- **Reopened work returns by itself** (FR-017). An item that leaves a terminal
+  state stops reporting `true` on the next reconciliation. Nothing is invalidated
+  because nothing was remembered.
+- **Correcting a manifest clears its report** (FR-013), for the same reason one
+  level up.
+
+## VII. Optimize for Deletion, Not Extension
+
+**Verdict: pass.** The whole feature is three fields on existing shapes, one
+condition in `matches`, one checkbox, one row marking, and one small component.
+No new channel, no new entity, no new file in `src/` at all — the only new file
+anywhere is a fixture flag's worth of code in `scripts/fixture.ts`.
+
+Removing it means deleting three fields and their two readers. Nothing was
+restructured to accommodate it, which is the honest test.
+
+## VIII. Make Dependencies Explicit
+
+**Verdict: pass.** `ItemRow` receives `item.terminal` and renders it. It does not
+acquire a definition, consult a lifecycle, or reach for a router to find out. The
+same discipline 003 applied to `selected` applies here for the same reason: a
+component that needed a definition could not be rendered by a suite that has none.
+
+## X. Render What You Can Prove — and one defect found late
+
+**Two deliberate refusals**, both of which improved the specification:
+
+- **Unknowable finishedness resolves to "not finished."** An unmapped item has no
+  declared state to consult; a repository whose definition failed to load cannot
+  answer for any of its items. Both keep the work visible, which is the answer
+  that hides nothing.
+- **No count of hidden finished work crosses the wire.** The renderer cannot know
+  one without fetching the very thing it is withholding. This forced an amendment
+  to FR-002 during analysis: the requirement had asked the list to convey that
+  finished work *exists*, which no honest implementation could do. It now conveys
+  only that finished work is **not shown**, and explicitly forbids claiming
+  otherwise. A control that promised finished work would be lying in every
+  repository that has none.
+
+**And one genuine defect, found by a test rather than by review.** The filter bar
+was suppressed whenever the list was empty and unfiltered — correct while an empty
+list meant "there is nothing here", and wrong the moment an empty list could mean
+"everything is finished and hidden". The empty state told the engineer to show
+finished work *while removing the only control that could*, leaving a hand-edited
+address as the sole way out — against SC-001 in as many words. The suppression now
+applies only where there is genuinely nothing to reveal: a pending first paint, a
+failed load, and the true first run.
+
+Worth naming plainly: **this was written by the same hand that wrote the copy
+pointing at the control**, in the same file, minutes apart, and neither review nor
+typecheck noticed. A component test did.
+
+## XIII. State Lives at the Edge It Is Needed
+
+**Verdict: pass.** `?finished=1` is URL state, following the line 003 drew — the
+URL holds what another person or another session should be able to arrive at. It
+is a filter, and every other filter here is already a query parameter.
+
+The interesting part is structural. 003 shipped a defect where the list rebuilt
+its whole query string and erased the detail pane's `?tab=`; the fix touched only
+the list's own keys, which works until someone adds a key and forgets. 004 added
+the fifth key and turned the implicit set into a named constant, `FILTER_PARAMS`,
+with the reason written above it. That is the right response to a defect: not just
+a fix, but a change that makes the *next* instance harder to write.
+
+## The pattern this project keeps producing, and a rule for it
+
+Four times now, this project has produced an assertion that passes without testing
+its claim:
+
+1. **001** satisfied all forty-eight requirements while not building the product
+   its own Input described — "left pane / right pane" never became a requirement.
+2. **003's T030** asserted that filtering did not change the detail pane. True —
+   and the open tab was silently reverting the whole time.
+3. **004's first FR-002 test** asserted a control was present. FR-002 was about
+   what the control *says*.
+4. **003's `Workbench.test.tsx`** counted bridge calls against a stub whose
+   overrides had replaced the counting. Three "was not re-fetched" assertions were
+   comparing `0` to `0`.
+
+They share one shape: **the assertion is about the mechanism, and the requirement
+is about the meaning.** The mechanism is easy to observe, so it is what gets
+asserted, and it stays true while the meaning quietly departs.
+
+No lint rule can catch that. What can help is a habit, and it is cheap enough to
+adopt: **when a test cites an FR, state in one line what would have to be false
+for it to fail.** If that sentence is not the requirement, the test is measuring
+something adjacent to it. All four cases above would have been caught by writing
+that sentence — and where 004's tasks did write it (T010a's warning), the defect
+was caught before it shipped.
+
+## Automation debt
+
+Two candidates, added to the three outstanding above:
+
+4. **`createBridgeStub` should keep tracking calls through an override.** The
+   current behaviour — an override silently replaces the call tracking — turned
+   three assertions vacuous and would do it again. This is a fixable harness
+   defect, not a habit to remember.
+5. **A rule that every field on a wire type is required unless justified.**
+   004's `terminal` was made required deliberately, so that "unknown means not
+   finished" is decided in one process rather than by every consumer. An optional
+   field would have compiled and quietly distributed that decision.
+
+## The rule the two link defects produced
+
+004 found a second instance of 003's collision, and it is worth stating as a rule
+because the two halves are not obviously the same problem.
+
+003 fixed **the list clobbering the detail's key**: `setFilter` rebuilt the whole
+query string and erased `?tab=`. Nobody then checked the reverse, and the reverse
+was also broken — `ItemRow`'s `<Link to={"/items/" + key}>` is a bare string, and
+a string location discards the query string entirely. Selecting a row cleared
+every filter, the search, and the finished flag. `ItemDetail`'s back link had the
+same shape.
+
+It survived a release because until 004 the only casualties were filters, and a
+list that changes after you touch a filter looks like a list you changed. 004's
+fifth key is the one whose loss changes *what the list contains* — 14 rows to 12,
+under the cursor, at the moment of reaching for one.
+
+**The rule**: a component that owns a set of URL keys must state both halves —
+what it writes, and what it carries. `Items.tsx` now has `writeFilterKeys` and
+`listSearch` beside each other, deriving from one `FILTER_PARAMS` constant, so the
+next key added is added once.
+
+**And the general form, which is the more useful lesson**: when a defect is found
+in one direction of a two-way relationship, the other direction is unproven, not
+absent. 003's fix was correct and its scope was assumed.
+
+## FR-013 is not met, and is recorded rather than waived
+
+Correcting a manifest does not clear its report until the application restarts.
+`reconcileRepository` re-reads items but never re-scans packages; only `reload()`
+does, and no UI control reaches it. The condition is pre-existing — every manifest
+edit has always been stale until restart — and FR-013 is merely the first
+requirement to depend on it.
+
+It is left open deliberately. The fix is a decision about *when* a package
+re-scan should happen, in a layer this feature's plan did not scope, and making
+that call unreviewed at the end of an implementation phase is how a reconcile loop
+acquires behaviour nobody specified. **The requirement was not weakened to match
+the code.** It is correct; the code does not yet satisfy it, and
+[004's baseline.md](../004-bound-active-list/baseline.md) says so under T039.
+
+This is the honest form of an unmet requirement, and worth keeping as the pattern:
+name it, locate it, explain why it was not fixed here, and leave the requirement
+standing.
+
+## Verdict
+
+**Pass, with one requirement recorded as unmet.** Five principles reviewed over a
+feature crossing three layers. No violation, no waiver. Two real defects found —
+one by a component test, one by walking the quickstart against a built
+application — both fixed and both now covered by tests verified against negative
+controls. One requirement amended during analysis because the design could not
+honestly satisfy it, one recorded as unmet because the code does not yet satisfy
+it, and one pre-existing hole in 003's test harness closed.
+
+The answer to tasks.md's two questions: **nothing stores finishedness**, proven by
+gate 4 rather than asserted; and **the renderer stayed a consumer**, proven by a
+grep whose every hit reads the field and none decides it.

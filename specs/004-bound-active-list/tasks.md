@@ -55,8 +55,8 @@ state *means* is the manifest's business.
 
 **Purpose**: Establish the baseline this feature must not regress.
 
-- [ ] T001 Record the baseline in `specs/004-bound-active-list/baseline.md`: run `npm run verify`, and write down the passing test count per suite, the initial-JS figure from `npm run size` (**141.06 KB of 150** at 003's close), and the 001/003 suites that SC-006 requires to still pass
-- [ ] T002 [P] Record the Principle II boundary baseline in the same file: `grep -rn "terminal" src/renderer` before anything changes, so plan.md's boundary test — *the renderer reads the field, never decides it* — has a before and an after to compare
+- [X] T001 Record the baseline in `specs/004-bound-active-list/baseline.md`: run `npm run verify`, and write down the passing test count per suite, the initial-JS figure from `npm run size` (**141.06 KB of 150** at 003's close), and the 001/003 suites that SC-006 requires to still pass
+- [X] T002 [P] Record the Principle II boundary baseline in the same file: `grep -rn "terminal" src/renderer` before anything changes, so plan.md's boundary test — *the renderer reads the field, never decides it* — has a before and an after to compare
 
 ---
 
@@ -69,12 +69,12 @@ all.
 **⚠️ CRITICAL**: T003–T006 are one change spread over four files. Between T003 and
 T006 the build is red; do not stop in the middle.
 
-- [ ] T003 Add `readonly terminal: boolean` to `WorkItemSummary` in `src/core/model/observed.ts`, documented as "the state this item rests in is declared terminal by this repository's definition". **Required, not optional** — an optional field pushes the "unknown means not finished" decision out to every consumer, and contracts/finished-work.md §1 places that decision in one process on purpose
-- [ ] T004 Add `terminal: z.boolean()` to the work item summary schema in `src/core/ipc/schema.ts`, so it is validated leaving the main process and arriving in the renderer (Principle IX)
-- [ ] T005 Derive it in `toSummary` in `src/main/ipc/items.ts`, reusing the existing `isTerminal` helper rather than a second implementation. Three rules from data-model.md, each a failure mode the spec names: **an unmapped item is never terminal** (FR-015); **a repository whose definition failed to load is never terminal** (FR-016); **it is recomputed on every projection and cached nowhere** (FR-017)
-- [ ] T006 Add the field to the three fixture helpers that construct a `WorkItemSummary`: `tests/component/ItemList.test.tsx`, `tests/component/Workbench.test.tsx`, `tests/unit/cache.rebuild.test.ts`. **One line each.** If any needs more, the fixture has grown a second purpose — report it rather than expanding the edit
-- [ ] T007 [P] Test the derivation in `tests/unit/items.aggregate.test.ts`: an item resting in a declared-terminal state reports `true`; an item in a non-terminal state reports `false`; an **unmapped** item reports `false`; an item whose repository has no loaded definition reports `false`
-- [ ] T008 Test that it is **derived, not stored**, in `tests/unit/cache.rebuild.test.ts`: deleting the cache and rebuilding from the provider fakes reproduces identical `terminal` values (gate 4, Principle VI). This is the task that would catch someone persisting it
+- [X] T003 Add `readonly terminal: boolean` to `WorkItemSummary` in `src/core/model/observed.ts`, documented as "the state this item rests in is declared terminal by this repository's definition". **Required, not optional** — an optional field pushes the "unknown means not finished" decision out to every consumer, and contracts/finished-work.md §1 places that decision in one process on purpose
+- [X] T004 Add `terminal: z.boolean()` to the work item summary schema in `src/core/ipc/schema.ts`, so it is validated leaving the main process and arriving in the renderer (Principle IX)
+- [X] T005 Derive it in `toSummary` in `src/main/ipc/items.ts`, reusing the existing `isTerminal` helper rather than a second implementation. Three rules from data-model.md, each a failure mode the spec names: **an unmapped item is never terminal** (FR-015); **a repository whose definition failed to load is never terminal** (FR-016); **it is recomputed on every projection and cached nowhere** (FR-017)
+- [X] T006 Add the field to the three fixture helpers that construct a `WorkItemSummary`: `tests/component/ItemList.test.tsx`, `tests/component/Workbench.test.tsx`, `tests/unit/cache.rebuild.test.ts`. **One line each.** If any needs more, the fixture has grown a second purpose — report it rather than expanding the edit
+- [X] T007 [P] Test the derivation in `tests/unit/items.aggregate.test.ts`: an item resting in a declared-terminal state reports `true`; an item in a non-terminal state reports `false`; an **unmapped** item reports `false`; an item whose repository has no loaded definition reports `false`
+- [X] T008 Test that it is **derived, not stored**, in `tests/unit/cache.rebuild.test.ts`: deleting the cache and rebuilding from the provider fakes reproduces identical `terminal` values (gate 4, Principle VI). This is the task that would catch someone persisting it
 
 **Checkpoint**: every item now says whether it is finished, and nothing recorded it.
 
@@ -92,25 +92,25 @@ state it finished in, and that opening it shows everything an active item shows.
 
 ### Tests for User Story 1
 
-- [ ] T009 [P] [US1] Test the filter branch in `tests/unit/items.aggregate.test.ts`: absent and `false` exclude terminal items; `true` includes them; and **naming a `stateId` still returns terminal items in that state**, since that rule is retained rather than replaced (data-model.md)
-- [ ] T010 [P] [US1] Test the default and the control in `tests/component/ItemList.test.tsx`: finished work is absent on first render (FR-001), a persistently visible control includes it, and excluding returns the list to exactly what it was
-- [ ] T010a [P] [US1] Test what the control **claims**, in `tests/component/ItemList.test.tsx` (FR-002): its accessible name says finished work is not shown and offers to show it; it renders identically in a repository with **no** finished work at all; and **nothing on screen asserts that finished work exists or how much there is** while it is hidden. ⚠️ The obvious test here — "a control is present" — passes whether or not FR-002 holds, which is how 003's W6 defect shipped: T030 asserted the detail did not change and was true while the tab silently reverted. Assert the claim, not the element
-- [ ] T011 [P] [US1] Test the marking in `tests/component/ItemList.test.tsx`: a finished row is distinguishable **without relying on colour** and names the state it finished in as that lifecycle names it (FR-003)
-- [ ] T012 [P] [US1] Test that filters narrow finished work in `tests/component/ItemList.test.tsx`: repository, SDLC, state and search narrow finished items exactly as they narrow active ones (FR-006) — finished work is more of the same list, not a second list
-- [ ] T013 [P] [US1] Test that the detail is undisturbed in `tests/component/Workbench.test.tsx`: with an item open, including and then excluding finished work leaves the detail pane showing the same item (FR-005, SC-008). This is 003's FR-014 rule applied to a new control, and a well-meaning refetch is what would break it
-- [ ] T014 [P] [US1] Test the all-finished empty state in `tests/component/ItemList.test.tsx`: with every item finished, the list distinguishes "nothing is in flight" from "nothing is here" and points at the finished work (spec §Edge Cases). An engineer must not be able to conclude their repository is broken
-- [ ] T015 [P] [US1] Test `vitest-axe` over the list with finished work included and the control in both states, in `tests/component/ItemList.test.tsx` (gate 6, Principle XI)
+- [X] T009 [P] [US1] Test the filter branch in `tests/unit/items.aggregate.test.ts`: absent and `false` exclude terminal items; `true` includes them; and **naming a `stateId` still returns terminal items in that state**, since that rule is retained rather than replaced (data-model.md)
+- [X] T010 [P] [US1] Test the default and the control in `tests/component/ItemList.test.tsx`: finished work is absent on first render (FR-001), a persistently visible control includes it, and excluding returns the list to exactly what it was
+- [X] T010a [P] [US1] Test what the control **claims**, in `tests/component/ItemList.test.tsx` (FR-002): its accessible name says finished work is not shown and offers to show it; it renders identically in a repository with **no** finished work at all; and **nothing on screen asserts that finished work exists or how much there is** while it is hidden. ⚠️ The obvious test here — "a control is present" — passes whether or not FR-002 holds, which is how 003's W6 defect shipped: T030 asserted the detail did not change and was true while the tab silently reverted. Assert the claim, not the element
+- [X] T011 [P] [US1] Test the marking in `tests/component/ItemList.test.tsx`: a finished row is distinguishable **without relying on colour** and names the state it finished in as that lifecycle names it (FR-003)
+- [X] T012 [P] [US1] Test that filters narrow finished work in `tests/component/ItemList.test.tsx`: repository, SDLC, state and search narrow finished items exactly as they narrow active ones (FR-006) — finished work is more of the same list, not a second list
+- [X] T013 [P] [US1] Test that the detail is undisturbed in `tests/component/Workbench.test.tsx`: with an item open, including and then excluding finished work leaves the detail pane showing the same item (FR-005, SC-008). This is 003's FR-014 rule applied to a new control, and a well-meaning refetch is what would break it
+- [X] T014 [P] [US1] Test the all-finished empty state in `tests/component/ItemList.test.tsx`: with every item finished, the list distinguishes "nothing is in flight" from "nothing is here" and points at the finished work (spec §Edge Cases). An engineer must not be able to conclude their repository is broken
+- [X] T015 [P] [US1] Test `vitest-axe` over the list with finished work included and the control in both states, in `tests/component/ItemList.test.tsx` (gate 6, Principle XI)
 
 ### Implementation for User Story 1
 
-- [ ] T016 [US1] Add `includeTerminal: z.boolean().optional()` to `itemFilterSchema` in `src/core/ipc/schema.ts`. Absent means `false`, so every existing caller is unchanged (contracts/finished-work.md §2)
-- [ ] T017 [US1] Honour it in `matches()` in `src/main/ipc/items.ts`: exclude a terminal item unless `includeTerminal === true` **or** a `stateId` is named. Keep the existing `stateId` rule — it costs nothing and removing it is a behaviour change this feature has no reason to make
-- [ ] T018 [US1] Add the finished control to `src/renderer/components/ItemFilters.tsx`, following the component's existing shape: it holds no state, `value` comes in and `onChange` goes out. A native control, keyboard-operable by construction (Principle XI, XII)
-- [ ] T019 [US1] Wire `?finished=1` in `src/renderer/routes/Items.tsx`: read it, pass `includeTerminal` to `useItems`, **and add the new key to the set `writeFilterKeys` deletes and rewrites**. ⚠️ This is where 003's W6 defect would return — the list rebuilding the query string and erasing the detail's `?tab=`. A fifth list-owned key that is added to the control but not to that set will appear to work, surviving filter changes by accident, and break the first time the code is reordered
-- [ ] T020 [US1] Mark a finished row in `src/renderer/components/ItemRow.tsx`: a non-colour cue plus the state it finished in. Take it from the `terminal` prop on the summary — the row must not decide finishedness, only render it (plan.md §Structure Decision)
-- [ ] T021 [US1] Add the all-finished empty-state branch in `src/renderer/routes/Items.tsx`, beside the existing empty states, with copy that names what is being offered (FR-002, Principle X)
-- [ ] T022 [P] [US1] Style the control, the finished row and the empty state in `src/renderer/styles.css`, under the delimited workbench section 003 created
-- [ ] T023 [US1] Confirm `src/renderer/components/CollapsedRail.tsx` still calls `useItems()` **with no filter**, so the collapsed rail stays on the bounded query. Attention is never raised on a terminal state, so its count is identical either way and it must not pull the larger list (research.md §2)
+- [X] T016 [US1] Add `includeTerminal: z.boolean().optional()` to `itemFilterSchema` in `src/core/ipc/schema.ts`. Absent means `false`, so every existing caller is unchanged (contracts/finished-work.md §2)
+- [X] T017 [US1] Honour it in `matches()` in `src/main/ipc/items.ts`: exclude a terminal item unless `includeTerminal === true` **or** a `stateId` is named. Keep the existing `stateId` rule — it costs nothing and removing it is a behaviour change this feature has no reason to make
+- [X] T018 [US1] Add the finished control to `src/renderer/components/ItemFilters.tsx`, following the component's existing shape: it holds no state, `value` comes in and `onChange` goes out. A native control, keyboard-operable by construction (Principle XI, XII)
+- [X] T019 [US1] Wire `?finished=1` in `src/renderer/routes/Items.tsx`: read it, pass `includeTerminal` to `useItems`, **and add the new key to the set `writeFilterKeys` deletes and rewrites**. ⚠️ This is where 003's W6 defect would return — the list rebuilding the query string and erasing the detail's `?tab=`. A fifth list-owned key that is added to the control but not to that set will appear to work, surviving filter changes by accident, and break the first time the code is reordered
+- [X] T020 [US1] Mark a finished row in `src/renderer/components/ItemRow.tsx`: a non-colour cue plus the state it finished in. Take it from the `terminal` prop on the summary — the row must not decide finishedness, only render it (plan.md §Structure Decision)
+- [X] T021 [US1] Add the all-finished empty-state branch in `src/renderer/routes/Items.tsx`, beside the existing empty states, with copy that names what is being offered (FR-002, Principle X)
+- [X] T022 [P] [US1] Style the control, the finished row and the empty state in `src/renderer/styles.css`, under the delimited workbench section 003 created
+- [X] T023 [US1] Confirm `src/renderer/components/CollapsedRail.tsx` still calls `useItems()` **with no filter**, so the collapsed rail stays on the bounded query. Attention is never raised on a terminal state, so its count is identical either way and it must not pull the larger list (research.md §2)
 
 **Checkpoint**: US1 is fully functional and independently demonstrable. This is the MVP.
 
@@ -135,19 +135,19 @@ accept a red build across the phase — but do not stop in the middle of it.
 
 ### Tests for User Story 2
 
-- [ ] T024 [P] [US2] Test the count in `tests/unit/boot.zero-config.test.ts`, beside the existing `stateCount` assertion: a lifecycle with one terminal state reports `1`, one with none reports `0`, one where every state is terminal reports `stateCount`
-- [ ] T025 [P] [US2] Test the report in `tests/component/Repositories.test.tsx`: `terminalStateCount === 0` renders a message **naming the package** and stating the consequence — items following it never leave the active list (FR-010, FR-011) — and saying the correction belongs in the package
-- [ ] T026 [P] [US2] Test the mirror case in `tests/component/Repositories.test.tsx`: `terminalStateCount === stateCount` is reported on the same terms (FR-014)
-- [ ] T027 [P] [US2] Test that it is a report and not a refusal in `tests/component/Repositories.test.tsx`: such a package is still listed, still selectable for registration, and carries no `problem` and no unsupported marking (FR-012). **A refusal here is a failure, not a stricter reading**
-- [ ] T028 [P] [US2] Test the quiet case in `tests/component/Repositories.test.tsx`: a healthy lifecycle reports nothing at all
+- [X] T024 [P] [US2] Test the count in `tests/unit/boot.zero-config.test.ts`, beside the existing `stateCount` assertion: a lifecycle with one terminal state reports `1`, one with none reports `0`, one where every state is terminal reports `stateCount`
+- [X] T025 [P] [US2] Test the report in `tests/component/Repositories.test.tsx`: `terminalStateCount === 0` renders a message **naming the package** and stating the consequence — items following it never leave the active list (FR-010, FR-011) — and saying the correction belongs in the package
+- [X] T026 [P] [US2] Test the mirror case in `tests/component/Repositories.test.tsx`: `terminalStateCount === stateCount` is reported on the same terms (FR-014)
+- [X] T027 [P] [US2] Test that it is a report and not a refusal in `tests/component/Repositories.test.tsx`: such a package is still listed, still selectable for registration, and carries no `problem` and no unsupported marking (FR-012). **A refusal here is a failure, not a stricter reading**
+- [X] T028 [P] [US2] Test the quiet case in `tests/component/Repositories.test.tsx`: a healthy lifecycle reports nothing at all
 
 ### Implementation for User Story 2
 
-- [ ] T029 [US2] Add `terminalStateCount: z.number()` to `sdlcPackageSummarySchema` in `src/core/ipc/schema.ts`, beside the `stateCount` it already carries
-- [ ] T030 [US2] Count it in `toPackageSummary` in `src/main/ipc/repositories.ts` from the loaded definition. **A count, not a verdict** — one field answers both conditions, and the engine does not decide what an engineer should be told (research.md §4)
-- [ ] T031 [US2] Add the field to the `SdlcPackageSummary` fixtures in `tests/component/Repositories.test.tsx` (three of them) and anywhere else one is constructed, including `tests/support/bridge.ts` if it builds one. One line each
-- [ ] T032 [US2] Report both conditions in `src/renderer/routes/Repositories.tsx`, beside where `stateCount` is already rendered. Neither test names a state, so the lint rule forbidding lifecycle vocabulary must still pass unchanged (FR-020, Principle II)
-- [ ] T033 [US2] Add a lifecycle declaring no terminal state to `scripts/fixture.ts` — the default lifecycle with `terminal: true` removed from its final state and **nothing else changed**, so the only variable is the one under test. Follow the existing flag vocabulary (`fixture package --omit-manifest` is the precedent). Without this, User Story 2 cannot be walked at all
+- [X] T029 [US2] Add `terminalStateCount: z.number()` to `sdlcPackageSummarySchema` in `src/core/ipc/schema.ts`, beside the `stateCount` it already carries
+- [X] T030 [US2] Count it in `toPackageSummary` in `src/main/ipc/repositories.ts` from the loaded definition. **A count, not a verdict** — one field answers both conditions, and the engine does not decide what an engineer should be told (research.md §4)
+- [X] T031 [US2] Add the field to the `SdlcPackageSummary` fixtures in `tests/component/Repositories.test.tsx` (three of them) and anywhere else one is constructed, including `tests/support/bridge.ts` if it builds one. One line each
+- [X] T032 [US2] Report both conditions in `src/renderer/routes/Repositories.tsx`, beside where `stateCount` is already rendered. Neither test names a state, so the lint rule forbidding lifecycle vocabulary must still pass unchanged (FR-020, Principle II)
+- [X] T033 [US2] Add a lifecycle declaring no terminal state to `scripts/fixture.ts` — the default lifecycle with `terminal: true` removed from its final state and **nothing else changed**, so the only variable is the one under test. Follow the existing flag vocabulary (`fixture package --omit-manifest` is the precedent). Without this, User Story 2 cannot be walked at all
 
 **Checkpoint**: US1 and US2 both work independently.
 
@@ -164,13 +164,13 @@ item, copy the address, and open it fresh. All four come back.
 
 ### Tests for User Story 3
 
-- [ ] T034 [P] [US3] Test restoration in `tests/component/Workbench.test.tsx`: mounting at an address carrying the finished flag, a filter, a search and a selection restores all four together (FR-007)
-- [ ] T035 [P] [US3] Test the default in `tests/component/Workbench.test.tsx`: an address that does not mention finished work excludes it — the quieter default, and the one that keeps the list bounded for someone who has never heard of this feature
-- [ ] T036 [P] [US3] Test the collision, both directions, in `tests/component/Workbench.test.tsx`: with finished work included and a detail tab open, changing a filter leaves `?tab=` untouched and leaves the finished flag set; "Clear filters" clears the finished flag **along with the other filters** and still leaves `?tab=` alone (quickstart B7)
+- [X] T034 [P] [US3] Test restoration in `tests/component/Workbench.test.tsx`: mounting at an address carrying the finished flag, a filter, a search and a selection restores all four together (FR-007)
+- [X] T035 [P] [US3] Test the default in `tests/component/Workbench.test.tsx`: an address that does not mention finished work excludes it — the quieter default, and the one that keeps the list bounded for someone who has never heard of this feature
+- [X] T036 [P] [US3] Test the collision, both directions, in `tests/component/Workbench.test.tsx`: with finished work included and a detail tab open, changing a filter leaves `?tab=` untouched and leaves the finished flag set; "Clear filters" clears the finished flag **along with the other filters** and still leaves `?tab=` alone (quickstart B7)
 
 ### Implementation for User Story 3
 
-- [ ] T037 [US3] Complete whatever T019 did not: confirm the flag is read from the address rather than remembered anywhere, that it is written with `replace` like the other filters, and that it is absent from the address when off rather than written as a falsy value
+- [X] T037 [US3] Complete whatever T019 did not: confirm the flag is read from the address rather than remembered anywhere, that it is written with `replace` like the other filters, and that it is absent from the address when off rather than written as a falsy value
 
 **Checkpoint**: all three stories are independently functional.
 
@@ -178,13 +178,13 @@ item, copy the address, and open it fresh. All four come back.
 
 ## Phase 6: Polish & Cross-Cutting Concerns
 
-- [ ] T038 **Prove SC-006.** Run `npx vitest run` and confirm every 001 and 003 suite passes, and record which files were edited and why against the T001 baseline. The expected edits are the fixture lines from T006 and T031 — **any suite needing a change beyond supplying a new field is a finding, not a chore**
-- [ ] T039 Run quickstart scenarios **B1–B15** against a built application and record the results in `specs/004-bound-active-list/baseline.md`, including B14's re-run of 001's V1–V5 and 003's W1–W12 (SC-006) as the load-bearing one. B14 also re-runs **001's V9, read-only** — the only coverage FR-019 has anywhere, and worth having because this is the first feature to speak of an item being *reopened*
-- [ ] T040 [P] Extend `tests/smoke/scale.spec.ts` to include finished work in the 220-item measurement, so SC-007 covers the longer list rather than the active one alone
-- [ ] T041 [P] Confirm `npm run size` passes and record the actual initial-JS figure against the ~141.8 KB projection in research.md §7. **If it fails, trim or move `Items` behind a lazy boundary — do not raise the budget**
-- [ ] T042 [P] Run the Principle II boundary test from plan.md: `grep -rn "terminal" src/renderer` and confirm every hit **reads** the field and none **decides** it. Compare against the T002 baseline
-- [ ] T043 [P] Update `README.md` if finished work changes what a first-time reader should expect the list to contain
-- [ ] T044 Append this feature's result to `specs/001-sdlc-work-item-dashboard/design-review.md`, reviewing principles VI, VII, VIII, X and XIII over the changed code. Specifically: did anything end up storing finishedness, and did the renderer stay a consumer of the answer rather than a second judge of it?
+- [X] T038 **Prove SC-006.** Run `npx vitest run` and confirm every 001 and 003 suite passes, and record which files were edited and why against the T001 baseline. The expected edits are the fixture lines from T006 and T031 — **any suite needing a change beyond supplying a new field is a finding, not a chore**
+- [X] T039 Run quickstart scenarios **B1–B15** against a built application and record the results in `specs/004-bound-active-list/baseline.md`, including B14's re-run of 001's V1–V5 and 003's W1–W12 (SC-006) as the load-bearing one. B14 also re-runs **001's V9, read-only** — the only coverage FR-019 has anywhere, and worth having because this is the first feature to speak of an item being *reopened*
+- [X] T040 [P] Extend `tests/smoke/scale.spec.ts` to include finished work in the 220-item measurement, so SC-007 covers the longer list rather than the active one alone
+- [X] T041 [P] Confirm `npm run size` passes and record the actual initial-JS figure against the ~141.8 KB projection in research.md §7. **If it fails, trim or move `Items` behind a lazy boundary — do not raise the budget**
+- [X] T042 [P] Run the Principle II boundary test from plan.md: `grep -rn "terminal" src/renderer` and confirm every hit **reads** the field and none **decides** it. Compare against the T002 baseline
+- [X] T043 [P] Update `README.md` if finished work changes what a first-time reader should expect the list to contain
+- [X] T044 Append this feature's result to `specs/001-sdlc-work-item-dashboard/design-review.md`, reviewing principles VI, VII, VIII, X and XIII over the changed code. Specifically: did anything end up storing finishedness, and did the renderer stay a consumer of the answer rather than a second judge of it?
 
 ---
 

@@ -49,6 +49,22 @@ export interface ItemRowProps {
    * VIII). It defaults to false so a list mounted alone is unchanged.
    */
   readonly selected?: boolean;
+  /**
+   * 004 — the list's own query string, carried onto this row's link.
+   *
+   * A `<Link to="/items/KEY">` with a bare string discards the entire query
+   * string, which meant selecting a row silently cleared every filter, the
+   * search, **and** whether finished work was being shown — the list changing
+   * under the cursor at the exact moment the engineer reached for something in
+   * it. 003 fixed the list clobbering the detail's `?tab=`; nobody checked the
+   * detail *link* clobbering the list's keys, and 004's fifth key is the one
+   * whose loss is visible, because losing it changes what the list contains.
+   *
+   * The caller supplies it, so this row still reads no route (Principle VIII),
+   * and so the decision about which keys survive a selection stays in the one
+   * component that knows which keys the list owns.
+   */
+  readonly search?: string;
   readonly onRetry: (key: string) => void;
   readonly retrying: boolean;
   /** An in-place, actionable reason the last retry did not help, or null. */
@@ -70,6 +86,7 @@ function stalenessCopy(freshness: WorkItemSummary['freshness']): string {
 export function ItemRow({
   item,
   selected = false,
+  search = '',
   onRetry,
   retrying,
   retryProblem,
@@ -80,6 +97,10 @@ export function ItemRow({
   const classes = ['row'];
   if (unmapped) classes.push('row--unmapped');
   if (selected) classes.push('row--selected');
+  // 004. `item.terminal` arrives already decided by the main process, which is
+  // the only place holding the lifecycle definition. The row renders it and
+  // never works it out (Principle II).
+  if (item.terminal) classes.push('row--finished');
 
   return (
     // `aria-current` is the whole of what assistive technology needs here, and it
@@ -87,7 +108,10 @@ export function ItemRow({
     // a destination — the engineer is already there.
     <li className={classes.join(' ')} aria-current={selected ? true : undefined}>
       <div className="row__head">
-        <Link className="row__link" to={`/items/${encodeURIComponent(item.key)}`}>
+        <Link
+          className="row__link"
+          to={{ pathname: `/items/${encodeURIComponent(item.key)}`, search }}
+        >
           <span className="row__key">{item.key}</span>
           <span className="row__title">{item.title}</span>
         </Link>
@@ -95,6 +119,10 @@ export function ItemRow({
             heavier edge, but the word is what survives greyscale, a monochrome
             display, and every form of colour blindness at once. */}
         {selected ? <span className="tag tag--selected">Reading</span> : null}
+        {/* FR-003, and never colour alone: the word is the cue that survives
+            greyscale. The state it finished in is already in `row__meta` below,
+            named by its own lifecycle, so nothing is repeated here. */}
+        {item.terminal ? <span className="tag tag--finished">Finished</span> : null}
         {item.attention === null ? null : <AttentionBadge signal={item.attention} />}
       </div>
 

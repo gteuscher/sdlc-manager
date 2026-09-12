@@ -37,6 +37,32 @@
  * What it asserts is that with the detail open, the attention state is still on
  * screen and still agrees with the list inside `ATTENTION_BUDGET_MS`. It cannot
  * claim the engineer reads it in ten seconds; that stays a human observation.
+ *
+ * ── T040: the same measurement, with finished work included ─────────────────
+ *
+ * 004 took work its lifecycle calls finished *out* of this list and put it behind
+ * a control, which means the figure measured above is no longer the longest list
+ * the engineer can be looking at. SC-007 restates the load for the long one: 200+
+ * items across 3+ repositories **with finished work included**, and identifying
+ * what needs the engineer still under ten seconds. So the measurement is extended
+ * rather than replaced — the bounded list stays the baseline, and the unbounded
+ * one is measured against it.
+ *
+ * research.md §8 predicted the answer and named why, and the prediction is worth
+ * asserting rather than trusting, because it is the entire reason no pagination
+ * was built: **a terminal state never raises attention**, so every finished item
+ * sorts below every item needing input. Including finished work lengthens the
+ * list *downward*, away from the thing being looked for. That is checkable
+ * directly — the last row needing attention precedes the first finished one, no
+ * finished row is itself flagged, and the attention count does not move when the
+ * list grows — and if it ever stopped being true, the budget would be the second
+ * thing to fail rather than the first.
+ *
+ * It runs last, after a detail has been opened, so it is the heaviest arrangement
+ * the application offers: both panes rendered *and* the unbounded list. Its
+ * baseline is therefore the two-pane figure immediately above it, taken from the
+ * same window a moment earlier, which is the only comparison that isolates the
+ * one variable it changes.
  */
 
 import { execFileSync } from 'node:child_process';
@@ -243,4 +269,112 @@ test('what needs me is still reachable within the budget with a detail open (SC-
     elapsed,
     `attention state took ${elapsed}ms to become readable with both panes rendered`,
   ).toBeLessThan(ATTENTION_BUDGET_MS);
+});
+
+// ── T040 — the same load again, unbounded (SC-007) ──────────────────────────
+// Last, and dependent on the test above having left a detail open: this is the
+// heaviest thing the application renders, and its baseline is the bounded list
+// as that test left it.
+
+test('what needs me is still reachable with finished work included (SC-007)', async () => {
+  const window = await app.firstWindow();
+
+  const rows = window.locator('.items__list > li');
+  await expect
+    .poll(async () => rows.count(), { timeout: ATTENTION_BUDGET_MS * 3 })
+    .toBeGreaterThanOrEqual(200);
+
+  // The bounded list, as the engineer ordinarily has it, is the baseline. Both
+  // figures are read from this window now rather than assumed from the fixture,
+  // because what SC-007 compares is two views of one loaded application.
+  const boundedRows = await rows.count();
+  const boundedAttention = await rows.locator('.attention').count();
+  expect(boundedAttention, 'the fixture seeds items needing attention').toBeGreaterThan(0);
+
+  const control = window.getByLabel('Show finished work');
+  await expect(control, 'finished work is excluded until asked for (FR-007)').not.toBeChecked();
+  // `click` and then wait for the box to come back ticked, rather than `check`,
+  // which asserts the new state in the same tick as the click. The control is
+  // driven by the address rather than by the DOM node — the click writes the
+  // query string and the box is ticked by the render that follows — so the
+  // round trip through the router is exactly what has to be waited for.
+  await control.click();
+  await expect(control).toBeChecked();
+
+  // The filter is the address (Principle XIII), so this list is a link someone
+  // could have been sent — the same state, reached without touching the control.
+  expect(window.url(), 'including finished work left no trace in the address').toContain(
+    'finished=1',
+  );
+
+  const started = Date.now();
+
+  // Asking for finished work is a different request, so the list is refetched;
+  // what must come back is a list at least as long as the bounded one, never a
+  // shorter one.
+  await expect
+    .poll(async () => rows.count(), { timeout: ATTENTION_BUDGET_MS * 3 })
+    .toBeGreaterThanOrEqual(boundedRows);
+
+  // The same question SC-001 asks, asked of the longest list the engineer can be
+  // shown: what is waiting on me, without opening anything further.
+  const count = window.locator('.attention-count');
+  await expect(count.first()).toBeVisible({ timeout: ATTENTION_BUDGET_MS });
+
+  // One pass over the rendered rows rather than two locator calls per row: at
+  // this volume the round trips would themselves consume the budget being
+  // measured, which would make the measurement a measurement of the test.
+  const shape = await rows.evaluateAll((nodes) =>
+    nodes.map((node) => ({
+      finished: node.classList.contains('row--finished'),
+      flagged: node.querySelector('.attention') !== null,
+    })),
+  );
+
+  const marked = shape.filter((row) => row.flagged).length;
+  const countText = await count.first().innerText();
+  expect(countText, 'the count and the marked rows disagree with finished work shown').toContain(
+    String(marked),
+  );
+
+  const elapsed = Date.now() - started;
+  expect(
+    elapsed,
+    `attention state took ${elapsed}ms to become readable with finished work included`,
+  ).toBeLessThan(ATTENTION_BUDGET_MS);
+
+  // ── research.md §8's claim, checked rather than assumed ───────────────────
+
+  expect(shape.length, 'including finished work shortened the list').toBeGreaterThanOrEqual(
+    boundedRows,
+  );
+
+  const finished = shape.filter((row) => row.finished).length;
+  expect(
+    finished,
+    'the fixture seeds one item in the terminal state per repository, so the longer list must be longer',
+  ).toBe(shape.length - boundedRows);
+  expect(finished, 'nothing finished came back, so SC-007 measured the bounded list again').toBeGreaterThan(
+    0,
+  );
+
+  // A terminal state never raises attention (`attention.ts`), so the count the
+  // engineer reads is the same number it was before the list grew. This is the
+  // property the whole "no pagination" decision rests on.
+  expect(marked, 'including finished work changed how much is waiting on the engineer').toBe(
+    boundedAttention,
+  );
+  expect(
+    shape.filter((row) => row.finished && row.flagged),
+    'a finished item is asking for the engineer, which no terminal state may do',
+  ).toHaveLength(0);
+
+  // And the growth is downward: the last row needing input precedes the first
+  // finished one, so the longer list grows away from what is being looked for.
+  const lastFlagged = shape.reduce((last, row, index) => (row.flagged ? index : last), -1);
+  const firstFinished = shape.findIndex((row) => row.finished);
+  expect(
+    firstFinished,
+    'a finished item is sitting above something waiting on the engineer',
+  ).toBeGreaterThan(lastFlagged);
 });

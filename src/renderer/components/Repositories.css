@@ -531,3 +531,20 @@
   color: var(--attention-gate);
   font-size: 13px;
 }
+
+/* 004. A lifecycle that never releases work. Advisory rather than a failure —
+   the package loads and its work is tracked — so it is toned apart from
+   `packages__problem` above, which means the package cannot be used at all. */
+.packages__release {
+  margin: 4px 0 0;
+  padding: 8px 10px;
+  border-left: 3px solid var(--stale);
+  background: var(--stale-bg);
+  color: var(--stale);
+  font-size: 13px;
+}
+
+.tag--advisory {
+  color: var(--stale);
+  background: var(--bg-raised);
+}

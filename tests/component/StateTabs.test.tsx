@@ -103,6 +103,8 @@ function fourthOfSix(overrides: Partial<WorkItemDetail> = {}): WorkItemDetail {
       reconciledAt: RECONCILED,
       freshness: 'fresh',
       disagreements: [],
+      // 004. The item sits in the fourth of six states, which is not terminal.
+      terminal: false,
     },
     states: [
       state(0, 'completed'),

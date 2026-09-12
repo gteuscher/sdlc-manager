@@ -66,6 +66,30 @@ states:
     terminal: true
 `;
 
+/**
+ * T024 (004). The same lifecycle with its one final state unmarked. Rule 8 wants
+ * every *non*-terminal state reachable from the provider that owns state, so
+ * unmarking it means the state must now be mapped — the one line the variant
+ * changes carries both halves of that.
+ */
+const MANIFEST_WITH_NO_TERMINAL_STATE = MANIFEST_NEEDING_A_CREDENTIAL.replace(
+  '    terminal: true\n',
+  '    maps:\n      ledger: ["omega"]\n',
+);
+
+/** T024 (004). The mirror: the same lifecycle with its first state marked final too. */
+const MANIFEST_WHERE_EVERY_STATE_IS_TERMINAL = MANIFEST_NEEDING_A_CREDENTIAL.replace(
+  '    name: Intake\n',
+  '    name: Intake\n    terminal: true\n',
+);
+
+/** Installs a lifecycle package under the root this test's boot will scan. */
+async function installLifecycle(manifest: string): Promise<void> {
+  const pkg = join(packageRoot, 'remote-only');
+  await mkdir(pkg, { recursive: true });
+  await writeFile(join(pkg, 'sdlc.yaml'), manifest, 'utf8');
+}
+
 beforeEach(async () => {
   userDataDir = await mkdtemp(join(tmpdir(), 'sdlc-boot-'));
   packageRoot = await mkdtemp(join(tmpdir(), 'sdlc-boot-packages-'));
@@ -157,6 +181,17 @@ describe('a workflow declaring an unconfigured provider (FR-035, SC-006)', () =>
     // two would tell the engineer to fix the wrong thing.
     expect(pkg?.supported).toBe(true);
     expect(pkg?.problem).toBeNull();
+  });
+
+  it('counts how many of its states the lifecycle declares final (004, FR-010)', async () => {
+    const started = boot();
+    await started.start();
+
+    const [pkg] = await started.handlers.repositories.listPackages();
+    // Two states, one of them the end of the line: a lifecycle that releases
+    // work, so the count is a plain fact and not yet a report about anything.
+    expect(pkg?.stateCount).toBe(2);
+    expect(pkg?.terminalStateCount).toBe(1);
   });
 
   it('names the provider kind the lifecycle needs, so the prompt can be actionable', async () => {
@@ -281,6 +316,68 @@ describe('an unsupported package cannot be associated with a repository (FR-045)
 
     const [pkg] = await started.handlers.repositories.listPackages();
     expect(pkg?.stateCount).toBe(0);
+    // 004: and no final state either. Nothing was loaded, so there is nothing to
+    // count in either direction — the count never stands in for a verdict about
+    // a package whose lifecycle was never read.
+    expect(pkg?.terminalStateCount).toBe(0);
     expect(JSON.stringify(pkg)).not.toMatch(/Draft|Build|Ship/);
+  });
+});
+
+/**
+ * T024 (004). The two conditions the repositories view reports on, counted at the
+ * boundary. Both packages below are the credential-needing lifecycle above with
+ * exactly one line changed, so what differs between them is the declaration of
+ * finality and nothing else.
+ */
+describe('a lifecycle that never releases work, and its mirror (FR-010, FR-014)', () => {
+  it('counts no final state where the manifest declares none', async () => {
+    // Guard the derivation: a replacement that silently matched nothing would
+    // leave this test asserting against the original manifest.
+    expect(MANIFEST_WITH_NO_TERMINAL_STATE).not.toMatch(/terminal:/);
+    await installLifecycle(MANIFEST_WITH_NO_TERMINAL_STATE);
+
+    const started = boot();
+    await started.start();
+
+    const [pkg] = await started.handlers.repositories.listPackages();
+    // FR-012: it loads. The condition is a report, and reporting it requires the
+    // package to be usable enough to have been read in the first place.
+    expect(pkg?.supported).toBe(true);
+    expect(pkg?.problem).toBeNull();
+    expect(pkg?.stateCount).toBe(2);
+    expect(pkg?.terminalStateCount).toBe(0);
+  });
+
+  it('counts every state as final where the manifest declares them all so', async () => {
+    expect(MANIFEST_WHERE_EVERY_STATE_IS_TERMINAL.match(/terminal: true/g)).toHaveLength(2);
+    await installLifecycle(MANIFEST_WHERE_EVERY_STATE_IS_TERMINAL);
+
+    const started = boot();
+    await started.start();
+
+    const [pkg] = await started.handlers.repositories.listPackages();
+    expect(pkg?.supported).toBe(true);
+    expect(pkg?.problem).toBeNull();
+    // FR-014's condition, expressed as the equality the view tests for.
+    expect(pkg?.stateCount).toBe(2);
+    expect(pkg?.terminalStateCount).toBe(pkg?.stateCount);
+  });
+
+  it('registers a repository against a lifecycle that never releases work (FR-012)', async () => {
+    await installLifecycle(MANIFEST_WITH_NO_TERMINAL_STATE);
+
+    const started = boot();
+    await started.start();
+
+    const registered = await started.handlers.repositories.registerRepository({
+      name: 'depot',
+      path: userDataDir,
+      packageId: 'remote-only',
+    });
+
+    // Reported, never enforced by refusing to track the work.
+    expect(registered.ok).toBe(true);
+    await expect(started.handlers.items.listItems({})).resolves.toBeInstanceOf(Array);
   });
 });

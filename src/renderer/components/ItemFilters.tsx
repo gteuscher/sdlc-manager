@@ -31,6 +31,18 @@ export interface ItemFilterValue {
   readonly packageId: string;
   readonly stateId: string;
   readonly search: string;
+  /**
+   * 004. Whether work the lifecycle considers finished is included. `false` — the
+   * quieter default — is what keeps the list bounded for someone who has never
+   * heard of this feature.
+   *
+   * It belongs in this shape rather than beside it because it *is* a filter: it
+   * narrows or widens the same list, it is cleared by "Clear filters" along with
+   * the rest, and it travels in the address the same way. Treating it as a
+   * separate kind of thing is how it would end up written by a code path that
+   * forgets the others exist.
+   */
+  readonly finished: boolean;
 }
 
 export interface ItemFiltersProps {
@@ -47,7 +59,12 @@ export function isFiltered(value: ItemFilterValue): boolean {
     value.repositoryId !== '' ||
     value.packageId !== '' ||
     value.stateId !== '' ||
-    value.search.trim() !== ''
+    value.search.trim() !== '' ||
+    // 004. Including finished work is a departure from the default view, so
+    // "Clear filters" must undo it along with everything else — otherwise the
+    // one control that promises to restore the ordinary list would leave the
+    // list larger than it found it.
+    value.finished
   );
 }
 
@@ -63,6 +80,7 @@ export function ItemFilters({
   const sdlcId = useId();
   const stateId = useId();
   const searchId = useId();
+  const finishedId = useId();
 
   return (
     <div className="filters">
@@ -135,6 +153,26 @@ export function ItemFilters({
           value={value.search}
           onChange={(event) => onChange({ ...value, search: event.target.value })}
         />
+      </div>
+
+      {/* 004, FR-002. The list withholds finished work by default, and this is
+          the only thing that says so — hence a persistent checkbox rather than
+          something behind a menu. Note what the label does *not* claim: it says
+          finished work can be shown, never that any exists. The renderer cannot
+          know whether it does without fetching the very thing it is withholding
+          (research.md §5), and a control promising finished work would be lying
+          in every repository that has none. */}
+      <div className="filters__field filters__field--check">
+        <label className="filters__check" htmlFor={finishedId}>
+          <input
+            className="filters__checkbox"
+            id={finishedId}
+            type="checkbox"
+            checked={value.finished}
+            onChange={(event) => onChange({ ...value, finished: event.target.checked })}
+          />
+          <span>Show finished work</span>
+        </label>
       </div>
 
       <div className="filters__field filters__field--action">

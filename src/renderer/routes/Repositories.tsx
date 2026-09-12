@@ -741,6 +741,62 @@ function RegisterRepository({ packages, pending, searchPaths }: RegisterReposito
 
 // ── What is installed (FR-042, FR-045) ───────────────────────────────────────
 
+/**
+ * T032 (004) — whether this lifecycle can ever let work go (FR-010, FR-011, FR-014).
+ *
+ * Two conditions, both silent until now and both making an engineer's list wrong
+ * in a way nothing else would explain:
+ *
+ *   **No terminal state.** Nothing this lifecycle tracks is ever finished, so its
+ *   items accumulate in the active list forever. The symptom is a long list,
+ *   which looks like being busy.
+ *
+ *   **Every state terminal.** The mirror, and just as broken: its items are
+ *   finished the moment they appear and never show as active at all.
+ *
+ * This is a **report, not a refusal**. The package still loads, the repository
+ * still registers, and its items are still tracked — 001's FR-045 set the
+ * precedent by reporting an unsupported package rather than failing, and this
+ * product reports rather than refuses (FR-012). It also says the correction
+ * belongs in the package, because nothing here can edit a manifest and offering
+ * to would be a lie.
+ *
+ * Note what this component does *not* do: it names no state. It compares two
+ * counts the main process derived, which is why the lint rule forbidding
+ * lifecycle vocabulary in the renderer still passes (FR-020, Principle II).
+ */
+function PackageRelease({ summary }: { readonly summary: SdlcPackageSummary }): ReactElement | null {
+  if (summary.stateCount === 0) return null;
+
+  if (summary.terminalStateCount === 0) {
+    return (
+      <p className="packages__release" role="status">
+        <span className="tag tag--advisory">Never finishes</span>{' '}
+        <span>
+          {summary.name} declares no final state, so nothing following it is ever finished and its
+          work items never leave the active list. Mark the lifecycle&rsquo;s last state as terminal
+          in the package itself — this application reads that declaration and cannot supply it.
+        </span>
+      </p>
+    );
+  }
+
+  if (summary.terminalStateCount === summary.stateCount) {
+    return (
+      <p className="packages__release" role="status">
+        <span className="tag tag--advisory">Finishes instantly</span>{' '}
+        <span>
+          Every state {summary.name} declares is final, so its work items count as finished the
+          moment they appear and never show as active. If that is not intended, the package is
+          marking more states terminal than it means to.
+        </span>
+      </p>
+    );
+  }
+
+  return null;
+}
+
 function InstalledPackages({ packages, pending }: PackageListProps): ReactElement {
   const headingId = useId();
 
@@ -778,10 +834,14 @@ function InstalledPackages({ packages, pending }: PackageListProps): ReactElemen
                 <code>{summary.path}</code>
               </p>
               {summary.supported ? (
-                <p className="packages__detail">
-                  {summary.stateCount} declared {summary.stateCount === 1 ? 'state' : 'states'}, one
-                  entry per {summary.unit}. Manifest contract version {summary.contractVersion}.
-                </p>
+                <>
+                  <p className="packages__detail">
+                    {summary.stateCount} declared {summary.stateCount === 1 ? 'state' : 'states'},
+                    one entry per {summary.unit}. Manifest contract version{' '}
+                    {summary.contractVersion}.
+                  </p>
+                  <PackageRelease summary={summary} />
+                </>
               ) : (
                 <p className="packages__problem" role="alert">
                   {summary.problem ?? 'It carries no readable lifecycle manifest.'}
