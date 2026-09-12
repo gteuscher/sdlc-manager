@@ -372,18 +372,42 @@ in the reference dashboard.
 
 ---
 
-## 8. Open questions for `/speckit-plan`
+## 8. Resolved: derivation staleness is out of scope for v1.0
 
-1. **Staleness / provenance.** Should the contract express that one state's artifacts derive from
-   another's, enabling the reference dashboard's *out of date* marker? A `derives_from: [state-id]`
-   field on a state would be the minimal form. It is arguably the highest-value signal here and is
-   currently unrepresentable.
-2. **Gate result storage.** For `kind: manual` in a read-only v1.0, where does the decision live?
+The *out of date* marker — a later state invalidated because an earlier one changed — is
+**deliberately absent from contract v1 and from v1.0 of the dashboard.** Decided 2026-09-11.
+
+**No `derives_from` field is needed.** The ordered `states` list already encodes the dependency:
+editing an earlier state's artifacts implies every later state may be stale. An explicit
+provenance field would only earn its keep for a non-linear lifecycle where `transitions` break the
+implied order, and no such need has been demonstrated.
+
+**When it is built, it asks rather than decides.** Derivation staleness will be surfaced as a
+question for the engineer — "the spec changed after this was written; is it still valid?" — not
+as an automatic invalidation. This matches the reference dashboard, where stale never
+auto-invalidates and the choice is always re-run or accept-as-is. Auto-invalidation is the failure
+mode to avoid: a whitespace edit to an early document should not mark six downstream states stale.
+
+**Why v1.0 can defer it.** The dashboard is read-only (FR-034), so it can never *cause* a state to
+go out of date. Note that this does not mean staleness cannot *occur* — an agent or engineer
+editing an early artifact outside the dashboard creates it regardless. v1.0 simply does not detect
+or display it, which is a reporting gap rather than an incorrect state.
+
+**Do not confuse the two staleness concepts.** They are unrelated and only one is in v1.0:
+
+| Concept | In v1.0? | Meaning |
+|---|---|---|
+| **Reconciliation staleness** | **Yes** — FR-002, FR-018, FR-037 | The dashboard's cached copy is older than the system of record, or a provider is unreachable. A property of *this application's* freshness. |
+| **Derivation staleness** | **No** — deferred | A later state's work was derived from an earlier state that has since changed. A property of *the work itself*, independent of any dashboard. |
+
+## 9. Open questions for `/speckit-plan`
+
+1. **Gate result storage.** For `kind: manual` in a read-only v1.0, where does the decision live?
    The `evidence` locator assumes some provider already records it; a lifecycle with no such field
    has no way to express a manual gate's result.
-3. **Per-item vs per-project items.** The Gamesmith example makes an entire game one work item,
+2. **Per-item vs per-project items.** The Gamesmith example makes an entire game one work item,
    whereas the Acme example makes each ticket one. Both fit, but nothing in the contract states
    the granularity — worth asserting explicitly.
-4. **Machine-readable schema.** This document is normative prose; the validation rules in §5 should
+3. **Machine-readable schema.** This document is normative prose; the validation rules in §5 should
    also exist as an executable schema so FR-044's field-level errors are generated rather than
    hand-written. That is a plan deliverable.

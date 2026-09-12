@@ -426,6 +426,16 @@ are constraints on how the v1.0 requirements should be satisfied.
   write would need rather than only what the current view displays; the provider boundary should
   be shaped so that adding write operations does not change how items are read; and no part of the
   interface should assume item state is immutable from the engineer's side.
+- **Derivation staleness — the "out of date" marker.** When an earlier state's artifacts change,
+  the work derived from them in later states may no longer be valid. v1.0 neither detects nor
+  displays this. When it is built it MUST ask the engineer rather than decide — surfacing "the
+  specification changed after this was written; is it still valid?" with re-run and accept-as-is
+  both available — because auto-invalidation turns a whitespace edit in an early document into six
+  falsely-stale downstream states. No provenance field is needed in the lifecycle manifest: the
+  ordered state list already implies that editing an earlier state may stale every later one.
+  Consequences for v1.0: none beyond keeping the ordered state list authoritative. Note this is
+  unrelated to reconciliation staleness (FR-002, FR-018, FR-037), which *is* in v1.0 and describes
+  the freshness of this application's cached copy rather than the validity of the work itself.
 - **A console that acts.** v1.0's console is advisory (FR-031a). The intended end state is a
   supervised session per state, able to use tools with the engineer approving each action inline,
   comparable to the console docks in both reference projects. Consequences for v1.0: transcripts
