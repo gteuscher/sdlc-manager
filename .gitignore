@@ -1,0 +1,40 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+build/
+out/
+release/
+.vite/
+
+# Test and measurement artifacts
+coverage/
+.nyc_output/
+playwright-report/
+test-results/
+perf-results/
+
+# Credentials and machine-local configuration.
+# Principle III: credentials are never committed.
+.env
+.env.*
+!.env.example
+*.local
+config.local.*
+credentials.json
+
+# Local cache. Principle VI: never authoritative, always rebuildable.
+.cache/
+.sdlc-cache/
+
+# Editor and OS
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# Logs
+*.log
+npm-debug.log*

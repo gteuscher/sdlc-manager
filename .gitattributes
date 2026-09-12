@@ -1,0 +1,17 @@
+# Principle I: line-ending assumptions must be platform-neutral.
+# Normalize everything to LF in the repository; checkout is per-platform.
+* text=auto eol=lf
+
+# Windows-only scripts keep CRLF on checkout.
+*.ps1 text eol=crlf
+*.cmd text eol=crlf
+*.bat text eol=crlf
+
+# Binary assets are never normalized.
+*.png binary
+*.jpg binary
+*.ico binary
+*.icns binary
+*.woff binary
+*.woff2 binary
+*.pdf binary
