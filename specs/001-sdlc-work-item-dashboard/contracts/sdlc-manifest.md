@@ -89,6 +89,8 @@ ownership:
 
 # ─── Item discovery and identity ──────────────────────────────────────────────
 items:
+  unit: ticket                 # Optional, default "item". The noun the interface uses for one
+                               # work item — "ticket", "story", "game". Display only.
   discover:                    # one or more rules; an item qualifying under any is listed once
     - provider: tracker
       query: "assignee = currentUser() AND statusCategory != Done"
@@ -235,7 +237,7 @@ repo_config:
 | `awaits_human` | no | Default `false`. `true` means a failed or unevaluated result is waiting on the engineer specifically. |
 | `configurable` | no | Default `false`. `true` permits repository override via `repo_config`. |
 | `provider` | for `check`/`field` | Which provider supplies the result. |
-| `evidence` | no | Where a `manual` gate's decision is recorded. |
+| `evidence` | **required for `manual`** | A provider-readable location where the decision is recorded. Required because v1.0 cannot record a decision itself without breaking read-only, and storing it locally would make our cache authoritative for something no system of record holds. |
 | `passes_when` | for `field` | Condition on the field value. |
 
 Every gate resolves to exactly one of `passed`, `failed`, `not_evaluated`. There is no fourth
@@ -278,6 +280,17 @@ loaded (FR-044).
 13. `write_back.records` is present whenever `write_back.transitions` or `write_back.gate_results`
     is `true`.
 14. Templating in a locator references only fields declared in `items.identity`.
+15. Every gate with `kind: manual` declares an `evidence` locator. A manual gate with nowhere to
+    read its decision from can never be anything but `not_evaluated`, so the manifest is rejected
+    rather than silently producing a gate that never resolves.
+
+**Granularity**: one match from an `items.discover` rule is one work item. A lifecycle whose rule
+matches a project file therefore has one item per project; one matching a ticket query has one item
+per ticket. Both are valid — `items.unit` supplies the noun the interface should use.
+
+**Executable form**: these rules exist as a Zod schema in `src/core/manifest`, which generates the
+field-level errors above. This document is the normative prose; the schema is the single
+implementation. Two hand-maintained copies would drift.
 
 ---
 
@@ -400,14 +413,14 @@ or display it, which is a reporting gap rather than an incorrect state.
 | **Reconciliation staleness** | **Yes** — FR-002, FR-018, FR-037 | The dashboard's cached copy is older than the system of record, or a provider is unreachable. A property of *this application's* freshness. |
 | **Derivation staleness** | **No** — deferred | A later state's work was derived from an earlier state that has since changed. A property of *the work itself*, independent of any dashboard. |
 
-## 9. Open questions for `/speckit-plan`
+## 9. Question log
 
-1. **Gate result storage.** For `kind: manual` in a read-only v1.0, where does the decision live?
-   The `evidence` locator assumes some provider already records it; a lifecycle with no such field
-   has no way to express a manual gate's result.
-2. **Per-item vs per-project items.** The Gamesmith example makes an entire game one work item,
-   whereas the Acme example makes each ticket one. Both fit, but nothing in the contract states
-   the granularity — worth asserting explicitly.
-3. **Machine-readable schema.** This document is normative prose; the validation rules in §5 should
-   also exist as an executable schema so FR-044's field-level errors are generated rather than
-   hand-written. That is a plan deliverable.
+All questions raised against this contract are resolved. Reasoning is in
+[research.md](../research.md) §16.
+
+| Question | Resolution |
+|---|---|
+| Derivation staleness / `derives_from` | Deferred out of v1.0 — see §8. No field added; the ordered state list already implies the dependency. |
+| Where a `manual` gate's result lives | `evidence` is required for `kind: manual` (rule 15). v1.0 cannot record a decision without breaking read-only, and recording it locally would make the cache authoritative for something no system of record holds. |
+| Per-item vs per-project granularity | One discovery match is one work item; `items.unit` names it. Asserted in §5, no structural change. |
+| Machine-readable schema | The Zod schema in `src/core/manifest` is the executable form; this document is the normative prose. |
